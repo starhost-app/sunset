@@ -26,23 +26,10 @@ impl Launcher {
                 .and_then(|r| backend::notes_summary(&r.body)),
             _ => None,
         };
-        let note_text = match summary {
-            Some(line) => format!("{}. {line}", tag.trim_start_matches('v')),
-            None => format!(
-                "{}. 26.3 Native Rust Minecraft Client. Offline & Microsoft authentication, zero telemetry.",
-                tag.trim_start_matches('v')
-            ),
-        };
         let state = div()
             .flex()
             .items_center()
-            .gap(px(10.))
-            .child(caps(format!("Minecraft {game}")).text_color(t.muted))
-            .child(div().size(px(4.)).rounded_full().bg(t.rule))
-            .child(
-                caps(if prepared { "Ready" } else { "Needs preparing" })
-                    .text_color(if prepared { t.success } else { t.warn }),
-            );
+            .child(caps(format!("Minecraft {game}")).text_color(t.muted));
         let mut hero = div()
             .flex()
             .flex_none()
@@ -55,12 +42,6 @@ impl Launcher {
                     .font_weight(FontWeight::BOLD)
                     .text_color(t.ink)
                     .child("SunSet"),
-            )
-            .child(
-                text(theme::BODY)
-                    .max_w(px(560.))
-                    .text_color(t.muted)
-                    .child(note_text),
             );
         // A Java instance (no Horizon tag) isn't offered Horizon's updates.
         if let Some(release) = self.updates.horizon.as_ref().filter(|_| !tag.is_empty()) {

@@ -350,8 +350,12 @@ impl Launcher {
 
         let mut settings = Settings::load();
         i18n::set(settings.language());
-        if settings.minecraft_dir.is_none() {
-            settings.minecraft_dir = backend::default_minecraft_dir();
+        if settings.minecraft_dir.as_ref().map_or(true, |p| {
+            let s = p.to_string_lossy();
+            s.contains("PrismLauncher") || s.contains("multimc") || s.contains("ModrinthApp")
+        }) {
+            settings.minecraft_dir = Some(backend::sunset_dir());
+            settings.save();
         }
         // Release builds on Linux put their entry back in the applications menu when there is
         // none or it starts a program that is gone (a moved or deleted binary), never over one
@@ -2345,7 +2349,7 @@ impl Launcher {
         wrap
     }
 
-    fn play_page(&mut self, cx: &mut Context<Self>) -> Div {
+    fn play_page(&mut self, window_width: f32, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
         // A Java instance plays Mojang's game: no Horizon version, nothing of Horizon's to prepare.
         let java = self.selected_instance().and_then(|i| i.java.clone());
@@ -2411,6 +2415,7 @@ impl Launcher {
             .flex()
             .items_center()
             .justify_end()
+            .w_full()
             .child(
                 div()
                     .flex()
@@ -2461,6 +2466,7 @@ impl Launcher {
         let rows = div()
             .flex()
             .flex_col()
+            .w_full()
             .border_t_1()
             .border_color(t.rule)
             .child(index_row(
@@ -2496,27 +2502,32 @@ impl Launcher {
                 &t,
             ));
 
+        let wm_size = (window_width * 0.18).max(theme::WORDMARK.px);
+        let wm_h = wm_size * 0.52;
         let watermark = div()
-            .mt(px(32.))
+            .flex_none()
+            .w_full()
+            .whitespace_nowrap()
             .ml(px(-14.))
-            .h(px(theme::WORDMARK.px * 0.74))
+            .h(px(wm_h))
             .overflow_hidden()
-            .text_size(px(theme::WORDMARK.px))
-            .line_height(px(theme::WORDMARK.px))
+            .text_size(px(wm_size))
+            .line_height(px(wm_size))
             .font_weight(FontWeight::MEDIUM)
             .text_color(if t.dark { t.plate_soft } else { t.plate })
             .child("sunset");
 
-        let mut page = div()
+        let mut top_content = div()
             .flex()
             .flex_col()
             .gap(px(28.))
+            .w_full()
             .child(hero)
             .child(actions)
             .child(rows);
         if self.preparing {
             let last = self.prepare_log.back().cloned().unwrap_or_default();
-            page = page.child(
+            top_content = top_content.child(
                 div()
                     .flex()
                     .flex_col()
@@ -2531,16 +2542,25 @@ impl Launcher {
             );
         }
         if let Some(e) = self.prepare_error.clone() {
-            page = page.child(notice(e, &t));
+            top_content = top_content.child(notice(e, &t));
         }
         if let Some(e) = self.client_error.clone() {
-            page = page.child(notice(e, &t));
+            top_content = top_content.child(notice(e, &t));
         }
         if let Some(crash) = self.crash.clone() {
-            page = page.child(self.crash_notice(crash, cx));
+            top_content = top_content.child(self.crash_notice(crash, cx));
         }
-        page = page.child(watermark);
-        page
+
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .size_full()
+            .min_h_full()
+            .w_full()
+            .child(top_content)
+            .child(div().flex_1().min_h(px(24.)))
+            .child(watermark)
     }
 
     /// "Horizon crashed": the report and the logs, and where to report it.
@@ -3826,7 +3846,7 @@ impl Render for Launcher {
         self.proxy_focused = self.proxy_focus.is_focused(window);
         let size = window.viewport_size();
         let content = match self.page {
-            Page::Play => self.play_page(cx),
+            Page::Play => self.play_page(size.width.into(), cx),
             Page::Versions => self.versions_page(cx),
             Page::Mods => self.mods_page(cx),
             Page::Servers => self.servers_page(cx),
@@ -3837,6 +3857,11 @@ impl Render for Launcher {
         // The new page fades in and rises a few pixels.
         let content = div()
             .relative()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .size_full()
+            .min_h_full()
             .w_full()
             // Let the page shrink inside the padded flex row so long notices can wrap.
             .min_w_0()
@@ -3916,15 +3941,23 @@ impl Render for Launcher {
                                     .child(
                                         div()
                                             .flex()
+                                            .flex_col()
+                                            .flex_1()
+                                            .size_full()
+                                            .min_h_full()
                                             .w_full()
                                             .min_w_0()
                                             .px(px(theme::GUTTER))
                                             .pt(px(24.))
-                                            .pb(px(48.))
+                                            .when(self.page != Page::Play, |d| d.pb(px(48.)))
                                             .child(
                                                 div()
+                                                    .flex()
+                                                    .flex_col()
+                                                    .flex_1()
+                                                    .size_full()
+                                                    .min_h_full()
                                                     .w_full()
-                                                    .max_w(px(1152.))
                                                     .child(content),
                                             ),
                                     ),

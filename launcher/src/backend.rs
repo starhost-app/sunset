@@ -441,20 +441,17 @@ pub fn links() -> Links {
         .map_or_else(Links::default, |text| Links::parse(&text))
 }
 
-/// The launcher's data folder; `SUNSET_LAUNCHER_HOME` or `HORIZON_LAUNCHER_HOME` overrides it.
+/// The custom directory where SunSet stores everything: ~/.sunset
+pub fn sunset_dir() -> PathBuf {
+    dirs::home_dir()
+        .map(|h| h.join(".sunset"))
+        .unwrap_or_else(|| PathBuf::from(".sunset"))
+}
+
+/// The launcher's data folder: ~/.sunset
 pub fn data_dir() -> PathBuf {
-    if let Some(home) = std::env::var_os("SUNSET_LAUNCHER_HOME")
-        .or_else(|| std::env::var_os("HORIZON_LAUNCHER_HOME"))
-        .filter(|h| !h.is_empty())
-    {
-        return PathBuf::from(home);
-    }
-    let base = dirs::data_dir().unwrap_or_else(std::env::temp_dir);
-    let sunset = base.join("sunset-launcher");
-    let horizon = base.join("horizon-launcher");
-    if !sunset.exists() && horizon.exists() {
-        let _ = std::fs::rename(&horizon, &sunset);
-    }
+    let sunset = sunset_dir();
+    let _ = std::fs::create_dir_all(&sunset);
     sunset
 }
 
@@ -1263,14 +1260,9 @@ fn minecraft_folders() -> Vec<PathBuf> {
     found
 }
 
-/// The official launcher's game directory, else the first other launcher's found
-/// (sources.rs); preparing looks in all of them anyway.
+/// The game directory: ~/.sunset
 pub fn default_minecraft_dir() -> Option<PathBuf> {
-    let folders = sources::Folders::current()?;
-    sources::known_folders(sources::Os::current(), &folders)
-        .into_iter()
-        .map(|(_, dir)| dir)
-        .find(|dir| dir.is_dir())
+    Some(sunset_dir())
 }
 
 fn found(program: &str, arg: &str) -> bool {
@@ -1840,21 +1832,10 @@ pub fn prepare_in_process(
     .map(|_| ())
 }
 
-/// Where the game keeps saves and options.txt: `SUNSET_HOME` or `HORIZON_HOME`, else `sunset` in the platform's
-/// data folder (~/.local/share/sunset on Linux).
+/// Where the game keeps saves and options.txt: ~/.sunset
 pub fn game_home() -> PathBuf {
-    if let Some(home) = std::env::var_os("SUNSET_HOME")
-        .or_else(|| std::env::var_os("HORIZON_HOME"))
-        .filter(|h| !h.is_empty())
-    {
-        return PathBuf::from(home);
-    }
-    let base = dirs::data_dir().unwrap_or_else(std::env::temp_dir);
-    let sunset = base.join("sunset");
-    let horizon = base.join("horizon");
-    if !sunset.exists() && horizon.exists() {
-        let _ = std::fs::rename(&horizon, &sunset);
-    }
+    let sunset = sunset_dir();
+    let _ = std::fs::create_dir_all(&sunset);
     sunset
 }
 
@@ -2232,8 +2213,7 @@ pub fn prune_old_versions() -> Vec<String> {
 pub fn minecraft_dir(requested: Option<PathBuf>) -> Result<PathBuf, String> {
     Ok(requested
         .or(Settings::load().minecraft_dir)
-        .or_else(default_minecraft_dir)
-        .unwrap_or_else(|| horizon_prepare::artifacts::minecraft_dir(None)))
+        .unwrap_or_else(sunset_dir))
 }
 
 /// The server folder: the one given, the one chosen in the launcher, or `server/` in the data folder.
@@ -3103,7 +3083,15 @@ impl Settings {
                 fields.remove("language");
             }
         }
-        serde_json::from_value(value).unwrap_or_default()
+        let mut settings: Settings = serde_json::from_value(value).unwrap_or_default();
+        let sunset = sunset_dir();
+        if settings.minecraft_dir.as_ref().map_or(true, |p| {
+            let s = p.to_string_lossy();
+            s.contains("PrismLauncher") || s.contains("multimc") || s.contains("ModrinthApp")
+        }) {
+            settings.minecraft_dir = Some(sunset);
+        }
+        settings
     }
     /// Whether the launcher keeps its entry in the applications menu (Linux).
     pub fn desktop_entry(&self) -> bool {
