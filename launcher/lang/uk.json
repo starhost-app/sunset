@@ -168,7 +168,6 @@
   "The build compiles the game: 20 to 30 minutes and a few GB of disk the first time (it downloads Rust), a few minutes after that.": "Збирання компілює гру: уперше це 20–30 хвилин і кілька ГБ на диску (воно завантажує Rust), далі — кілька хвилин.",
   "Delete old versions automatically": "Автоматично видаляти старі версії",
   "Keeps the {count} newest, the one in use and the ones your instances use. Deleted versions install again from the Versions page.": "Залишає {count} найновіших, ту, що використовується, і ті, що потрібні вашим екземплярам. Видалені версії можна знову встановити на сторінці «Версії».",
-  "Installed versions use {size}.": "Встановлені версії займають {size}.",
   "{size} on disk": "{size} на диску",
   "Move {name} to the Trash, with its worlds and settings? You can get it back from there.": "Перемістити {name} до кошика разом зі світами й налаштуваннями? Звідти його можна буде відновити.",
   "Delete…": "Видалити…",

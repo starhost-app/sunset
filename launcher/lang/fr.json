@@ -159,7 +159,6 @@
   "Cancel": "Annuler",
   "Delete old versions automatically": "Supprimer automatiquement les anciennes versions",
   "Keeps the {count} newest, the one in use and the ones your instances use. Deleted versions install again from the Versions page.": "Garde les {count} plus récentes, celle utilisée et celles de vos instances. Une version supprimée se réinstalle depuis la page Versions.",
-  "Installed versions use {size}.": "Les versions installées occupent {size}.",
   "{size} on disk": "{size} sur le disque",
   "Native mods (experimental)": "Mods natifs (expérimental)",
   "Native mods from the Mods page compile into the game with the launcher's own Rust. Not sandboxed: they can do anything you can on this computer.": "Les mods natifs de la page Mods sont compilés dans le jeu avec le Rust du launcher. Sans bac à sable : ils peuvent faire tout ce que vous pouvez faire sur cet ordinateur.",

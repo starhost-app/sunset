@@ -1761,12 +1761,12 @@ fn page_header(title: &str, description: &str, t: &Theme) -> Div {
                 .text_color(t.ink)
                 .child(tr(title).to_string()),
         )
-        .child(
+        .children((!description.is_empty()).then(|| {
             text(theme::UI)
                 .max_w(px(520.))
                 .text_color(t.muted)
-                .child(tr(description).to_string()),
-        )
+                .child(tr(description).to_string())
+        }))
 }
 
 /// One row of a list, as its own panel: a name in the pixel face with an optional detail under
@@ -3392,11 +3392,7 @@ impl Launcher {
 
     fn versions_page(&mut self, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
-        let header = page_header(
-            "Versions",
-            "Builds from GitHub. Each one installs into its own folder.",
-            &t,
-        );
+        let header = page_header("Versions", "", &t);
         // Measured again when the installed versions change.
         if self.disk_for != self.installed {
             self.disk_for = self.installed.clone();
@@ -3415,18 +3411,11 @@ impl Launcher {
                 .filter(|_| self.installed.contains(tag))
                 .map(|(_, n)| *n)
         };
-        let used: u64 = self.installed.iter().filter_map(on_disk).sum();
         let page = div()
             .flex()
             .flex_col()
-            .gap(px(32.))
-            .child(header)
-            .children((used > 0).then(|| {
-                text(theme::UI).text_color(t.muted).child(trf(
-                    "Installed versions use {size}.",
-                    &[("size", &megabytes(used))],
-                ))
-            }));
+            .gap(px(24.))
+            .child(header);
         let mut releases_vec = match &self.releases {
             Load::Ready(r) => r.clone(),
             _ => Vec::new(),
