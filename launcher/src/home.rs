@@ -14,12 +14,12 @@ impl Launcher {
         &self,
         tag: &str,
         game: &str,
-        prepared: bool,
+        _prepared: bool,
         cx: &mut Context<Self>,
     ) -> Div {
         let t = self.theme;
         let n = t.night;
-        let summary = match &self.releases {
+        let _summary = match &self.releases {
             Load::Ready(list) => list
                 .iter()
                 .find(|r| r.tag == tag)

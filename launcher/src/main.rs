@@ -1094,7 +1094,16 @@ impl Launcher {
         self.settings
             .selected
             .as_ref()
-            .filter(|s| self.installed.contains(s))
+            .and_then(|s| {
+                if self.installed.contains(s) {
+                    Some(s)
+                } else if s == backend::SUNSET_VERSION {
+                    self.installed.first()
+                } else {
+                    None
+                }
+            })
+            .or_else(|| self.installed.first())
     }
 
     fn install(&mut self, release: &Release) {
@@ -1143,15 +1152,11 @@ impl Launcher {
             return;
         };
         horizon_launcher::mojang::CANCEL.store(false, Ordering::Relaxed);
-        let minecraft = self
-            .settings
-            .minecraft_dir
-            .clone()
-            .unwrap_or_else(|| horizon_prepare::artifacts::minecraft_dir(None));
+        let minecraft = backend::data_dir().join("minecraft");
         self.prepare_log.clear();
         self.prepare_error = None;
         self.prepare_log
-            .push_back("Checking Java and your Minecraft install".into());
+            .push_back("Checking Minecraft files and Java".into());
         let tx = self.tx.clone();
         // The checks may download the server jar, so they run on the thread too.
         std::thread::spawn(move || {
@@ -1774,11 +1779,8 @@ fn page_header(title: &str, description: &str, t: &Theme) -> Div {
 /// the call sites as they are.
 /// How an available update is named: a Nightly by its title ("Nightly 2026-10-28 · 0c02067"), a
 /// release by its tag.
-fn update_name(release: &Release) -> &str {
-    match release.nightly {
-        Some(_) => &release.name,
-        None => &release.tag,
-    }
+fn update_name(release: &Release) -> String {
+    backend::display_version(&release.tag)
 }
 
 fn index_row(
@@ -2396,10 +2398,31 @@ impl Launcher {
         wrap
     }
 
-    fn play_page(&mut self, window_width: f32, cx: &mut Context<Self>) -> Div {
+    fn watermark(&self, window_width: f32) -> Div {
+        let t = self.theme;
+        let wm_size = (window_width * 0.28).max(theme::WORDMARK.px);
+        let wm_h = wm_size * 0.52;
+        div()
+            .flex_none()
+            .w_full()
+            .whitespace_nowrap()
+            .ml(px(-14.))
+            .h(px(wm_h))
+            .overflow_hidden()
+            .text_size(px(wm_size))
+            .line_height(px(wm_size))
+            .font_weight(FontWeight::BOLD)
+            .text_color(if t.dark { t.plate_soft } else { t.plate })
+            .child("sunset")
+    }
+
+    fn play_page(&mut self, window_width: f32, window_height: f32, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
         // A Java instance plays Mojang's game: no Horizon version, nothing of Horizon's to prepare.
         let java = self.selected_instance().and_then(|i| i.java.clone());
+
+
+        let avail_h = (window_height - 144.).max(400.);
         let Some(tag) = self
             .selected()
             .cloned()
@@ -2409,21 +2432,32 @@ impl Launcher {
             return div()
                 .flex()
                 .flex_col()
-                .gap(px(24.))
-                .pt(px(28.))
-                .child(page_header(
-                    "Play",
-                    "Start the game, or run a server for others to join.",
-                    &t,
-                ))
-                .child(centered(tr("No version installed yet."), &t).child(
-                    button("go-versions", "Choose a version", Kind::Secondary, &t).on_click(
-                        cx.listener(|this, _: &ClickEvent, _, cx| {
-                            this.go(Page::Versions);
-                            cx.notify();
-                        }),
-                    ),
-                ));
+                .flex_1()
+                .min_h_full()
+                .justify_between()
+                .w_full()
+                .min_h(px(avail_h))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(24.))
+                        .pt(px(28.))
+                        .child(page_header(
+                            "Play",
+                            "Start the game, or run a server for others to join.",
+                            &t,
+                        ))
+                        .child(centered(tr("No version installed yet."), &t).child(
+                            button("go-versions", "Choose a version", Kind::Secondary, &t).on_click(
+                                cx.listener(|this, _: &ClickEvent, _, cx| {
+                                    this.go(Page::Versions);
+                                    cx.notify();
+                                }),
+                            ),
+                        )),
+                )
+                .child(self.watermark(window_width));
         };
         let prepared = backend::is_prepared(&tag);
         // Prepared without sounds (#1035): Prepare again is the fix, so it stands out.
@@ -2447,8 +2481,6 @@ impl Launcher {
             "Running"
         } else if self.preparing {
             "Preparing…"
-        } else if !prepared {
-            "Prepare"
         } else {
             "Play"
         };
@@ -2490,20 +2522,6 @@ impl Launcher {
                     .child(play),
             );
 
-        let wm_size = (window_width * 0.18).max(theme::WORDMARK.px);
-        let wm_h = wm_size * 0.52;
-        let watermark = div()
-            .flex_none()
-            .w_full()
-            .whitespace_nowrap()
-            .ml(px(-14.))
-            .h(px(wm_h))
-            .overflow_hidden()
-            .text_size(px(wm_size))
-            .line_height(px(wm_size))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(if t.dark { t.plate_soft } else { t.plate })
-            .child("sunset");
 
         let mut top_content = div()
             .flex()
@@ -2538,16 +2556,18 @@ impl Launcher {
             top_content = top_content.child(self.crash_notice(crash, cx));
         }
 
+
+        let avail_h = (window_height - 144.).max(400.);
         div()
             .flex()
             .flex_col()
             .flex_1()
-            .size_full()
             .min_h_full()
+            .justify_between()
             .w_full()
+            .min_h(px(avail_h))
             .child(top_content)
-            .child(div().flex_1().min_h(px(24.)))
-            .child(watermark)
+            .child(self.watermark(window_width))
     }
 
     /// "Horizon crashed": the report and the logs, and where to report it.
@@ -2704,7 +2724,7 @@ impl Launcher {
             }),
         );
         let horizon = match (&self.updates.horizon, &self.update_error) {
-            (Some(r), _) => trf("{version} available", &[("version", update_name(r))]),
+            (Some(r), _) => trf("{version} available", &[("version", &update_name(r))]),
             (None, Some(e)) => e.clone(),
             (None, None) if self.checked.is_some() => tr("Up to date").to_string(),
             _ => tr("Checking…").to_string(),
@@ -3822,7 +3842,7 @@ impl Render for Launcher {
         self.proxy_focused = self.proxy_focus.is_focused(window);
         let size = window.viewport_size();
         let content = match self.page {
-            Page::Play => self.play_page(size.width.into(), cx),
+            Page::Play => self.play_page(size.width.into(), size.height.into(), cx),
             Page::Versions => self.versions_page(cx),
             Page::Mods => self.mods_page(cx),
             Page::Servers => self.servers_page(cx),
