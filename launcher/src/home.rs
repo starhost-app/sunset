@@ -19,24 +19,24 @@ impl Launcher {
     ) -> Div {
         let t = self.theme;
         let n = t.night;
-        let instance = self.selected_instance();
-        let name = instance.map_or(
-            if tag.is_empty() {
-                "Minecraft"
-            } else {
-                "SunSet"
-            },
-            |i| if i.name == "Horizon" { "SunSet" } else { i.name.as_str() },
+        let summary = match &self.releases {
+            Load::Ready(list) => list
+                .iter()
+                .find(|r| r.tag == tag)
+                .and_then(|r| backend::notes_summary(&r.body)),
+            _ => None,
+        };
+        let status = format!(
+            "MINECRAFT {game}  ·  {}",
+            if prepared { "READY" } else { "NEEDS PREPARING" }
         );
-        let mut what = vec![format!("Minecraft: Java Edition {game}")];
-        if !tag.is_empty() {
-            what.push(format!(
-                "SunSet {}",
-                horizon_launcher::nightly::label(tag)
-                    .unwrap_or_else(|| tag.trim_start_matches('v').to_string())
-            ));
-        }
-        what.push(tr(if prepared { "Ready" } else { "Needs preparing" }).to_string());
+        let note_text = match summary {
+            Some(line) => format!("{}. {line}", tag.trim_start_matches('v')),
+            None => format!(
+                "{}. 26.3 Native Rust Minecraft Client. Offline & Microsoft authentication, zero telemetry.",
+                tag.trim_start_matches('v')
+            ),
+        };
         let state = div()
             .flex()
             .items_center()
@@ -45,28 +45,38 @@ impl Launcher {
                 div()
                     .flex_none()
                     .size(px(6.))
+                    .rounded_full()
                     .bg(if prepared { t.success } else { t.warn }),
             )
             .child(
-                shell::text(night::CAPTION, c(n.ink_soft))
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(what.join(" · ")),
+                caps(status)
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(if prepared { t.success } else { t.warn }),
             );
-        // Never squeezed by the rows below: the ping notice can make it tall.
         let mut hero = div()
             .flex()
             .flex_none()
             .flex_col()
-            .gap(px(10.))
+            .gap(px(14.))
+            .pt(px(16.))
             .child(state)
             .child(
-                shell::text(night::DISPLAY, c(n.ink))
-                    .truncate()
-                    .child(name.to_string()),
+                div()
+                    .font_family(theme::DISPLAY_FONT)
+                    .text_size(px(56.))
+                    .line_height(px(60.))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(t.ink)
+                    .child("SunSet"),
             )
-            .children(instance.map(|i| {
-                shell::text(night::UI, c(n.ink_soft)).child(instances_page::played_line(i))
-            }));
+            .child(
+                div()
+                    .text_size(px(14.))
+                    .line_height(px(20.))
+                    .text_color(t.muted)
+                    .max_w(px(720.))
+                    .child(note_text),
+            );
         // A Java instance (no Horizon tag) isn't offered Horizon's updates.
         if let Some(release) = self.updates.horizon.as_ref().filter(|_| !tag.is_empty()) {
             let installing = self.installing.as_ref().filter(|(t, _)| *t == release.tag);

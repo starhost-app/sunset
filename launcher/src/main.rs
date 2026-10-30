@@ -1785,13 +1785,50 @@ fn update_name(release: &Release) -> &str {
 }
 
 fn index_row(
-    _n: usize,
+    n: usize,
     name: impl IntoElement,
     detail: Option<AnyElement>,
     right: Option<AnyElement>,
     t: &Theme,
 ) -> Div {
-    slot_row(None, name, detail, right, t)
+    let index = div()
+        .font_family(theme::MONO)
+        .text_size(px(13.))
+        .w(px(28.))
+        .flex_none()
+        .text_color(t.muted)
+        .child(format!("{n:02}"));
+    div()
+        .flex()
+        .items_center()
+        .gap(px(16.))
+        .min_h(px(theme::ROW))
+        .py(px(14.))
+        .border_b_1()
+        .border_color(t.rule)
+        .child(index)
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_w_0()
+                .gap(px(3.))
+                .child(
+                    div()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_size(px(15.))
+                        .text_color(t.ink)
+                        .child(name),
+                )
+                .children(detail.map(|d| {
+                    div()
+                        .text_size(px(theme::CAPTION.px))
+                        .text_color(t.muted)
+                        .child(d)
+                })),
+        )
+        .children(right)
 }
 
 /// A row with an icon slot (`blocks::slot`) on its left: a project in the Mods page's lists.
@@ -1926,12 +1963,14 @@ impl Launcher {
     /// sky shows through, under a 1 px rule.
     fn topbar(&mut self, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
-        let n = t.night;
         let mut nav = div().flex().flex_none().items_center().gap(px(4.));
-        for (page, label, _) in Page::ALL {
-            if page == Page::Settings {
-                continue;
-            }
+        let tabs = [
+            (Page::Play, "Play"),
+            (Page::Versions, "Versions"),
+            (Page::Notes, "Patch notes"),
+            (Page::Settings, "Settings"),
+        ];
+        for (page, label) in tabs {
             nav = nav.child(
                 shell::tab(format!("nav-{label}"), tr(label), self.page == page, &t).on_click(
                     cx.listener(move |this, _: &ClickEvent, _, cx| {
@@ -1941,91 +1980,64 @@ impl Launcher {
                 ),
             );
         }
-        // Only a signed-in account says "Microsoft account"; otherwise an offline name, or the
-        // one the game made up. A signed-in one shows its face (its UUID's default skin).
-        let (name, how) = self.who_plays();
-        let face = match self.accounts.player() {
-            account::Player::Microsoft(_) => self.accounts.selected().map(|a| a.uuid.clone()),
-            _ => None,
-        };
-        let picture = match face {
-            Some(uuid) => self.head(&uuid, 28.).into_any_element(),
-            None => div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .size(px(28.))
-                .bg(plate::alpha(n.card_hi, n.card_hi_alpha))
-                .child(blocks::icon("user", 16., shell::c(n.muted)))
-                .into_any_element(),
-        };
-        let account = shell::chip("account", &t)
-            .max_w(px(200.))
-            .child(div().relative().child(picture))
+
+        let mark_and_title = div()
+            .flex()
+            .items_center()
+            .gap(px(10.))
+            .child(mark(18., &t))
             .child(
                 div()
-                    .relative()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .child(
-                        shell::text(theme::night::UI, shell::c(n.ink))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .line_height(px(16.))
-                            .truncate()
-                            .child(name),
-                    )
-                    .child(
-                        shell::text(theme::night::CAPTION, shell::c(n.muted))
-                            .truncate()
-                            .child(how),
-                    ),
-            )
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                this.account_menu = !this.account_menu;
-                if this.account_menu {
-                    // Who can play may have changed elsewhere since the window opened.
-                    this.accounts = Accounts::load();
-                }
-                cx.notify();
-            }));
-        let account = div()
-            .relative()
-            .child(account)
-            .children(self.account_menu(cx));
-        let settings = shell::icon_button(
-            "nav-Settings",
-            "sliders",
-            40.,
-            self.page == Page::Settings,
-            &t,
-        )
-        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-            this.go(Page::Settings);
-            cx.notify();
-        }));
+                    .font_family(theme::PIXEL)
+                    .font_weight(FontWeight::BOLD)
+                    .text_size(px(18.))
+                    .text_color(t.ink)
+                    .child("SunSet"),
+            );
         div()
             .flex()
             .flex_none()
             .items_center()
-            .h(px(theme::TOPBAR))
-            .pl(px(theme::PAGE_GUTTER - 14.))
-            .pr(px(12.))
+            .justify_between()
+            .h(px(56.))
+            .px(px(theme::PAGE_GUTTER))
             .border_b_1()
-            .border_color(plate::alpha(n.stroke, n.rule_alpha))
+            .border_color(t.rule)
+            .child(mark_and_title)
             .child(nav)
-            .child(
-                div()
-                    .ml_auto()
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(account)
-                    .child(settings),
-            )
+    }
+
+    fn footer(&self, _cx: &mut Context<Self>) -> Div {
+        let t = self.theme;
+        let link = |id: &'static str, label: &'static str, url: &'static str| {
+            caps(label)
+                .id(id)
+                .text_color(t.muted)
+                .cursor_pointer()
+                .hover(|s| s.text_color(t.ink))
+                .on_click(move |_, _, cx| cx.open_url(url))
+        };
+        let version = div()
+            .flex()
+            .gap(px(12.))
+            .child(caps(format!("LAUNCHER {}", backend::VERSION)).text_color(t.muted));
+        let links = div()
+            .flex()
+            .items_center()
+            .gap(px(20.))
+            .child(link("link-discord", "Discord", "https://discord.gg/HcTeMZxe5E"))
+            .child(link("link-website", "Website", "https://github.com/starhost-app/sunset"));
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .justify_between()
+            .h(px(44.))
+            .px(px(theme::PAGE_GUTTER))
+            .border_t_1()
+            .border_color(t.rule)
+            .child(version)
+            .child(links)
     }
 
     /// The sidebar, from the top of the window: the wordmark, Horizon and the imported modpacks,
@@ -2386,32 +2398,41 @@ impl Launcher {
             }
             None => self.hero(&tag, &version, prepared, cx),
         };
-        let actions = self.home_actions(prepared || java.is_some(), java.is_some(), cx);
-        let left = self.download_left();
-        let steps = self.preparing.then(|| self.steps(&version, left));
+        let running = self.client.is_some() || self.starting_client.is_some();
+        let play_label = if running { "Running" } else { "Play" };
+        let mut play = button("play", play_label, Kind::Primary, &t)
+            .min_w(px(140.))
+            .h(px(theme::CONTROL_LARGE))
+            .px(px(32.))
+            .text_size(px(theme::UI.px));
+        if !prepared || self.preparing || running {
+            play = disabled(play);
+        } else {
+            play = play.on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                this.picker_open = false;
+                this.play();
+                cx.notify();
+            }));
+        }
+        let actions = div()
+            .flex()
+            .items_center()
+            .justify_end()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(12.))
+                    .child(self.picker(cx))
+                    .child(play),
+            );
 
-        // Not prepared: an owner can have Horizon download Minecraft from Mojang; without an
-        // owner there is nothing to play, so signing in comes first.
-        let first = (!prepared && !self.preparing)
-            .then_some(self.owner_shown())
-            .flatten();
-        // No launcher folder with Minecraft on this computer: an owner needs none.
-        let no_install = self.settings.minecraft_dir.is_none();
-        let resources_value = match first {
-            _ if self.preparing => tr("Preparing…").to_string(),
-            Some(true) if no_install => trf(
-                "Not prepared. Play downloads Minecraft {version} from Mojang for your account and prepares it.",
-                &[("version", &version)],
-            ),
-            Some(true) => trf(
-                "Not prepared. Horizon can download Minecraft {version} from Mojang for your account, or use your own install.",
-                &[("version", &version)],
-            ),
-            Some(false) => trf(
-                "Not prepared. Sign in with the Microsoft account that owns Minecraft {version} first.",
-                &[("version", &version)],
-            ),
-            None => backend::resources_summary(prepared, !silent, &version),
+        let resources_value = if self.preparing {
+            tr("Preparing…").to_string()
+        } else if prepared {
+            format!("Prepared for Minecraft {version}")
+        } else {
+            format!("Not prepared. SunSet needs the files of your own Minecraft {version}.")
         };
         let mut prepare = button(
             "prepare",
@@ -2431,61 +2452,10 @@ impl Launcher {
                 cx.notify();
             }));
         }
-        let prepare = match first {
-            Some(true) if no_install => div().child(
-                button(
-                    "prepare-download",
-                    "Download and prepare",
-                    Kind::Secondary,
-                    &t,
-                )
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.prepare(backend::MinecraftFrom::Mojang);
-                    cx.notify();
-                })),
-            ),
-            Some(true) => div()
-                .flex()
-                .gap(px(8.))
-                .child(
-                    button("prepare-install", "From my install", Kind::Ghost, &t).on_click(
-                        cx.listener(|this, _: &ClickEvent, _, cx| {
-                            this.prepare(backend::MinecraftFrom::Install);
-                            cx.notify();
-                        }),
-                    ),
-                )
-                .child(
-                    button(
-                        "prepare-download",
-                        "Download and prepare",
-                        Kind::Secondary,
-                        &t,
-                    )
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                        this.prepare(backend::MinecraftFrom::Mojang);
-                        cx.notify();
-                    })),
-                ),
-            Some(false) => div().child(
-                button("prepare-sign-in", "Sign in", Kind::Secondary, &t).on_click(cx.listener(
-                    |this, _: &ClickEvent, _, cx| {
-                        this.sign_in_to_play();
-                        cx.notify();
-                    },
-                )),
-            ),
-            None => div().child(prepare),
-        };
-        let owner = self.owner == Some(true);
         let minecraft = self.settings.minecraft_dir.as_deref().map_or_else(
             || {
                 div()
-                    .child(if owner {
-                        tr("None needed: Horizon downloads Minecraft from Mojang for your account.")
-                    } else {
-                        tr("Not found. Choose the folder where your launcher keeps Minecraft.")
-                    })
+                    .child("Not found. Choose the official launcher's game folder.")
                     .into_any_element()
             },
             |p| {
@@ -2495,38 +2465,25 @@ impl Launcher {
                     .into_any_element()
             },
         );
-        let mut rows = div()
+        let who = match self.accounts.selected() {
+            Some(a) => format!("{} (Microsoft account)", a.name),
+            None => "Offline: online servers need a Microsoft account.".to_string(),
+        };
+        let rows = div()
             .flex()
             .flex_col()
-            .children(self.instance_row(1, cx))
-            .children(self.export_panel(cx))
-            .children(self.launch_panel(cx));
-        rows = match &java {
-            Some(java) => rows.child(index_row(
-                2,
-                tr("Game"),
-                Some(
-                    div()
-                        .child(trf(
-                            "Minecraft {version} (Java Edition). Play downloads it from Mojang for your account the first time, with the Java it needs.",
-                            &[("version", &java.minecraft)],
-                        ))
-                        .into_any_element(),
-                ),
-                None,
+            .border_t_1()
+            .border_color(t.rule)
+            .child(index_row(
+                1,
+                "Resources",
+                Some(div().child(resources_value).into_any_element()),
+                Some(prepare.into_any_element()),
                 &t,
-            )),
-            None => rows
-                .child(index_row(
-                    2,
-                    tr("Resources"),
-                    Some(div().child(resources_value).into_any_element()),
-                    Some(prepare.into_any_element()),
-                    &t,
-                ))
-                .child(index_row(
-                3,
-                tr("Minecraft folder"),
+            ))
+            .child(index_row(
+                2,
+                "Minecraft folder",
                 Some(minecraft),
                 Some(
                     button("choose-mc", "Choose…", Kind::Ghost, &t)
@@ -2534,125 +2491,66 @@ impl Launcher {
                         .into_any_element(),
                 ),
                 &t,
-            )),
-        };
-        {
-            // The top bar shows who plays; a row only when there is something to do about it:
-            // no account that owns the game (Play needs one), or offline.
-            if self.owner_shown() == Some(false) {
-                rows = rows.child(index_row(
-                    5,
-                    tr("Microsoft account"),
-                    Some(
-                        div()
-                            .child(format!("{}.", tr(account::NEEDS_OWNER)))
-                            .into_any_element(),
-                    ),
-                    Some(
-                        button("gate-sign-in", "Sign in", Kind::Primary, &t)
-                            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                                this.sign_in_to_play();
-                                cx.notify();
-                            }))
-                            .into_any_element(),
-                    ),
-                    &t,
-                ));
-            } else if self.accounts.selected().is_none() && account::client_id().is_some() {
-                rows = rows.child(index_row(
-                    5,
-                    tr("Playing offline"),
-                    Some(
-                        div()
-                            .child(tr("Online servers need a Microsoft account."))
-                            .into_any_element(),
-                    ),
-                    Some(
-                        button("accounts", "Accounts…", Kind::Ghost, &t)
-                            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                                this.go(Page::Settings);
-                                cx.notify();
-                            }))
-                            .into_any_element(),
-                    ),
-                    &t,
-                ));
-            }
-        }
+            ))
+            .child(index_row(
+                3,
+                "Playing as",
+                Some(div().child(who).into_any_element()),
+                Some(
+                    button("accounts", "Accounts…", Kind::Ghost, &t)
+                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                            this.go(Page::Settings);
+                            cx.notify();
+                        }))
+                        .into_any_element(),
+                ),
+                &t,
+            ));
 
-        // The banner: the hero and the Play row over the sky (`sky.rs`), or over the player's
-        // own picture under a veil of the page colour. It reaches the content's edges and the top
-        // bar.
-        let veil = |angle: f32, from: f32, to: f32, at: f32| {
-            div()
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full()
-                .bg(gpui::linear_gradient(
-                    angle,
-                    gpui::linear_color_stop(t.page.opacity(from), 0.),
-                    gpui::linear_color_stop(t.page.opacity(to), at),
-                ))
-        };
-        let picture = self.home_background().map(|path| {
-            [
-                gpui::img(path)
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full()
-                    .object_fit(gpui::ObjectFit::Cover)
-                    .into_any_element(),
-                veil(90., 0.82, 0., 0.62).into_any_element(),
-                veil(180., 0., 0.75, 1.).into_any_element(),
-            ]
-        });
-        let banner = div()
-            .relative()
+        let watermark = div()
+            .mt(px(48.))
+            .ml(px(-8.))
+            .h(px(theme::WORDMARK.px * 0.74))
+            .overflow_hidden()
+            .text_size(px(theme::WORDMARK.px))
+            .line_height(px(theme::WORDMARK.px))
+            .font_weight(FontWeight::BOLD)
+            .text_color(if t.dark { t.plate_soft } else { t.plate })
+            .child("sunset");
+
+        let mut page = div()
             .flex()
             .flex_col()
-            .justify_end()
-            .min_h(px(340.))
-            .mx(px(-theme::PAGE_GUTTER))
-            .px(px(theme::PAGE_GUTTER))
-            .pb(px(28.))
-            .gap(px(24.))
-            .overflow_hidden()
-            .children(picture.into_iter().flatten())
-            .child(
+            .gap(px(28.))
+            .child(hero)
+            .child(actions)
+            .child(rows);
+        if self.preparing {
+            let last = self.prepare_log.back().cloned().unwrap_or_default();
+            page = page.child(
                 div()
-                    .relative()
                     .flex()
-                    .items_end()
-                    .gap(px(32.))
+                    .flex_col()
+                    .gap(px(10.))
+                    .child(progress_bar(None, &t))
                     .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .gap(px(28.))
-                            .child(hero)
-                            .child(actions)
-                            // The preparation's steps right under Play, where the player looks
-                            // after pressing it, not below the fold (#666).
-                            .children(steps),
-                    )
-                    // Notes and friends are Horizon's.
-                    .children(java.is_none().then(|| self.home_card(&tag, cx))),
+                        text(theme::MICRO)
+                            .text_color(t.muted)
+                            .truncate()
+                            .child(last),
+                    ),
             );
-        let mut page = div().flex().flex_col().gap(px(28.)).child(banner);
+        }
         if let Some(e) = self.prepare_error.clone() {
             page = page.child(notice(e, &t));
         }
-        page = page.child(self.home_tabs(rows, cx));
         if let Some(e) = self.client_error.clone() {
             page = page.child(notice(e, &t));
         }
         if let Some(crash) = self.crash.clone() {
             page = page.child(self.crash_notice(crash, cx));
         }
+        page = page.child(watermark);
         page
     }
 
@@ -3533,21 +3431,40 @@ impl Launcher {
                     &[("size", &megabytes(used))],
                 ))
             }));
-        let releases = match &self.releases {
-            Load::Loading => return page.child(centered("Loading releases…", &t)),
-            Load::Failed(e) => {
-                return page.child(centered(&format!("Couldn't load releases. {e}"), &t).child(
-                    button("retry", "Try again", Kind::Secondary, &t).on_click(cx.listener(
-                        |this, _: &ClickEvent, _, cx| {
-                            this.fetch_releases();
-                            cx.notify();
-                        },
-                    )),
-                ))
-            }
-            Load::Ready(r) if r.is_empty() => return page.child(centered("No releases yet.", &t)),
-            Load::Ready(r) => r,
+        let mut releases_vec = match &self.releases {
+            Load::Ready(r) => r.clone(),
+            _ => Vec::new(),
         };
+        for tag in &self.installed {
+            if !releases_vec.iter().any(|r| &r.tag == tag) {
+                releases_vec.push(backend::Release {
+                    tag: tag.clone(),
+                    name: format!("SunSet {tag}"),
+                    body: "Local installed SunSet build".into(),
+                    date: "Installed".into(),
+                    asset: None,
+                    prerelease: false,
+                    nightly: tag.starts_with("nightly").then(|| "nightly".into()),
+                });
+            }
+        }
+        if releases_vec.is_empty() {
+            match &self.releases {
+                Load::Loading => return page.child(centered("Loading releases…", &t)),
+                Load::Failed(e) => {
+                    return page.child(centered(&format!("Couldn't load releases. {e}"), &t).child(
+                        button("retry", "Try again", Kind::Secondary, &t).on_click(cx.listener(
+                            |this, _: &ClickEvent, _, cx| {
+                                this.fetch_releases();
+                                cx.notify();
+                            },
+                        )),
+                    ));
+                }
+                _ => return page.child(centered("No releases yet.", &t)),
+            }
+        }
+        let releases = &releases_vec;
         // A hundred releases: only the rows near the screen are drawn.
         let keep = |i: usize| {
             let tag = &releases[i].tag;
@@ -3956,7 +3873,7 @@ impl Render for Launcher {
             self.wake_sky(next, cx);
         }
         let topbar = self.topbar(cx);
-        let sidebar = self.sidebar(window, cx);
+        let footer = self.footer(cx);
         let mut root = div()
             .id("root")
             .track_focus(&self.root_focus)
@@ -3993,46 +3910,46 @@ impl Render for Launcher {
                 div()
                     .relative()
                     .flex()
+                    .flex_col()
                     .size_full()
                     .opacity(ui)
                     .top(px(theme::RISE * (1. - ui)))
-                    .child(sidebar)
+                    .child(topbar)
                     .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .min_w_0()
-                            .child(topbar)
-                            .child(
-                                self.content_scroll
-                                    .wrap(
+                        self.content_scroll
+                            .wrap(
+                                div()
+                                    .id("content")
+                                    .relative()
+                                    .flex_1()
+                                    .min_h_0()
+                                    .overflow_y_scroll()
+                                    .child(
                                         div()
-                                            .id("content")
-                                            .relative()
-                                            .flex_1()
-                                            .min_h_0()
-                                            .overflow_y_scroll()
+                                            .flex()
+                                            .justify_center()
+                                            .w_full()
+                                            .min_w_0()
+                                            .px(px(theme::PAGE_GUTTER))
+                                            .pt(px(if self.page == Page::Play {
+                                                0.
+                                            } else {
+                                                28.
+                                            }))
+                                            .pb(px(48.))
                                             .child(
                                                 div()
-                                                    .flex()
                                                     .w_full()
-                                                    .min_w_0()
-                                                    .px(px(theme::PAGE_GUTTER))
-                                                    .pt(px(if self.page == Page::Play {
-                                                        0.
-                                                    } else {
-                                                        28.
-                                                    }))
-                                                    .pb(px(48.))
+                                                    .max_w(px(1000.))
                                                     .child(content),
                                             ),
-                                        &t,
-                                    )
-                                    .flex_1()
-                                    .min_h_0(),
-                            ),
-                    ),
+                                    ),
+                                &t,
+                            )
+                            .flex_1()
+                            .min_h_0(),
+                    )
+                    .child(footer),
             );
         if self.page == Page::Servers {
             if let Some(dialog) = self.create_dialog(cx) {
