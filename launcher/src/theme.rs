@@ -9,27 +9,22 @@ use horizon_theme as tokens;
 use std::time::Duration;
 
 pub use tokens::night::{self, Night};
-pub use tokens::{Step, CAPTION, DISPLAY, HEADING, LABEL, MICRO, TITLE, UI, WORDMARK};
-pub const FONT: &str = night::FONT;
-pub const DISPLAY_FONT: &str = night::DISPLAY_FONT;
+pub use tokens::{
+    Step, BODY, CAPTION, DISPLAY, HEADING, LABEL, MICRO, TITLE, UI, WORDMARK,
+    CONTROL, CONTROL_LARGE, DISABLED, FIELD, GUTTER, PRESSED, RADIUS,
+    RADIUS_PILL, RADIUS_PLATE, RISE, ROW, SEGMENT,
+};
+pub const FONT: &str = tokens::FONT;
+pub const DISPLAY_FONT: &str = tokens::FONT;
 pub const MONO: &str = tokens::MONO;
-/// What the Blocks parts set in their pixel face (headings, navigation, buttons) until their
-/// screens are rebuilt: the night's UI family.
-pub const PIXEL: &str = night::FONT;
+/// The classic look uses Geist across UI elements.
+pub const PIXEL: &str = tokens::FONT;
 
-pub use tokens::{BLOCK_BEVEL as BEVEL, BLOCK_LIP as LIP};
-/// Shapes and controls, shared with the game's menus and the website.
-pub use tokens::{CONTROL_LARGE, DISABLED, FIELD, PRESSED, RISE, ROW, SEGMENT};
-
-/// Blocks have square corners: these stay for the places that ask for a radius.
-pub const RADIUS: f32 = 0.;
-pub const RADIUS_PLATE: f32 = 0.;
-/// Buttons are a little taller than the quiet look's, for their lip.
-pub const CONTROL: f32 = 34.;
-/// The top bar, and the sidebar of instances and servers.
 pub const TOPBAR: f32 = 56.;
 pub const SIDEBAR: f32 = 248.;
 pub const PAGE_GUTTER: f32 = 32.;
+
+pub use tokens::BLOCK_BEVEL as BEVEL;
 
 /// Motion: short and eased out, never bouncy.
 pub const QUICK: Duration = tokens::QUICK.duration();
@@ -108,33 +103,34 @@ impl Theme {
     }
 
     fn from(p: tokens::Blocks, night: Night) -> Self {
+        let pal = if p.dark { tokens::DARK } else { tokens::LIGHT };
         Self {
-            page: c(p.page),
-            plate_soft: c(p.raised),
-            plate: c(p.button),
-            surface: c(p.panel),
-            rule: c(p.rule),
-            ink: c(p.ink),
-            ink_soft: c(p.ink_soft),
-            muted: c(p.muted),
-            accent: c(p.accent),
-            on_accent: c(p.on_face),
-            danger: c(p.danger),
-            success: c(p.success),
+            page: c(pal.page),
+            plate_soft: c(pal.plate_soft),
+            plate: c(pal.plate),
+            surface: c(pal.surface),
+            rule: c(pal.rule),
+            ink: c(pal.ink),
+            ink_soft: c(pal.ink_soft),
+            muted: c(pal.muted),
+            accent: c(pal.accent),
+            on_accent: c(pal.on_accent),
+            danger: c(pal.danger),
+            success: c(pal.success),
             warn: c(p.warn),
-            side: c(p.side),
-            panel: c(p.panel),
-            raised: c(p.raised),
-            button: c(p.button),
+            side: c(pal.page),
+            panel: c(pal.surface),
+            raised: c(pal.plate_soft),
+            button: c(pal.plate),
             button_bevel: c(p.button_bevel),
-            well: c(p.well),
+            well: c(pal.plate_soft),
             bevel: c(p.bevel),
             lip: c(p.lip),
             outline: c(p.outline),
-            face: c(p.face),
+            face: c(pal.accent),
             face_bevel: c(p.face_bevel),
             face_lip: c(p.face_lip),
-            on_face: c(p.on_face),
+            on_face: c(pal.on_accent),
             night,
             dark: p.dark,
         }

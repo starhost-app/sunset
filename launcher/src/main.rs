@@ -1496,9 +1496,9 @@ fn button(
     let label = SharedString::from(tr(&label).to_string());
     let t = *t;
     let hover = match kind {
-        Kind::Primary => t.on_face.opacity(0.10),
-        Kind::Secondary => t.bevel.opacity(if t.dark { 0.10 } else { 0.35 }),
-        Kind::Ghost => t.raised,
+        Kind::Primary => t.on_accent.opacity(0.12),
+        Kind::Secondary => t.plate,
+        Kind::Ghost => t.plate_soft,
     };
     let base = div()
         .id(id.clone())
@@ -1508,38 +1508,30 @@ fn button(
         .items_center()
         .justify_center()
         .h(px(theme::CONTROL))
-        .px(px(14.))
-        .font_family(theme::PIXEL)
-        .text_size(px(15.))
+        .px(px(16.))
+        .rounded(px(theme::RADIUS_PILL))
+        .font_family(theme::FONT)
+        .text_size(px(theme::LABEL.px))
         .font_weight(FontWeight::MEDIUM)
         .cursor_pointer()
-        .child(hover_layer(&id, hover, 0., 0.));
+        .child(hover_layer(&id, hover, theme::RADIUS_PILL, 0.))
+        .child(div().relative().child(label));
+    let base = track_hover(base, id);
     let base = match kind {
         Kind::Primary => base
-            .border_2()
-            .border_color(t.outline)
-            .children(blocks::edges(t.face_bevel, t.face_lip, theme::LIP))
-            .bg(t.face)
-            .text_color(t.on_face),
+            .bg(t.accent)
+            .text_color(t.on_accent)
+            .active(|s| s.opacity(theme::PRESSED)),
         Kind::Secondary => base
-            .border_2()
-            .border_color(t.outline)
-            .children(blocks::edges(t.button_bevel, t.lip, theme::LIP))
-            .bg(t.button)
-            .text_color(t.ink),
-        Kind::Ghost => base.text_color(t.muted).hover(move |s| s.text_color(t.ink)),
+            .bg(t.plate_soft)
+            .text_color(t.ink)
+            .active(|s| s.opacity(theme::PRESSED)),
+        Kind::Ghost => base
+            .text_color(t.muted)
+            .hover(|s| s.text_color(t.ink))
+            .active(|s| s.opacity(theme::PRESSED)),
     };
-    // The label sits on the block's face, above its lip; pressing pushes it down.
-    let base = base.child(
-        div()
-            .relative()
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .pb(px(if kind == Kind::Ghost { 0. } else { 2. }))
-            .child(label),
-    );
-    keyboard(track_hover(base, id), &t).active(|s| s.opacity(theme::PRESSED).top(px(1.)))
+    keyboard(base, &t).active(|s| s.opacity(theme::PRESSED))
 }
 
 /// Copies to the clipboard, or into `HORIZON_LAUNCHER_CLIPBOARD` when a test run sets it
@@ -1963,7 +1955,7 @@ impl Launcher {
     /// sky shows through, under a 1 px rule.
     fn topbar(&mut self, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
-        let mut nav = div().flex().flex_none().items_center().gap(px(4.));
+        let mut nav = div().flex().items_center().gap(px(2.));
         let tabs = [
             (Page::Play, "Play"),
             (Page::Versions, "Versions"),
@@ -1971,39 +1963,58 @@ impl Launcher {
             (Page::Settings, "Settings"),
         ];
         for (page, label) in tabs {
-            nav = nav.child(
-                shell::tab(format!("nav-{label}"), tr(label), self.page == page, &t).on_click(
-                    cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.go(page);
-                        cx.notify();
-                    }),
-                ),
-            );
+            let active = self.page == page;
+            let id = SharedString::from(format!("nav-{label}"));
+            let item = div()
+                .id(id.clone())
+                .relative()
+                .flex()
+                .items_center()
+                .h(px(theme::CONTROL))
+                .px(px(14.))
+                .rounded(px(theme::RADIUS_PILL))
+                .text_size(px(theme::LABEL.px))
+                .cursor_pointer()
+                .when(active, |d| d.bg(t.plate_soft))
+                .when(!active, |d| {
+                    d.child(hover_layer(&id, t.plate_soft, theme::RADIUS_PILL, 0.))
+                })
+                .child(
+                    div()
+                        .relative()
+                        .when(active, |d| {
+                            d.text_color(t.ink).font_weight(FontWeight::MEDIUM)
+                        })
+                        .when(!active, |d| d.text_color(t.muted))
+                        .child(tr(label)),
+                )
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.go(page);
+                    cx.notify();
+                }));
+            nav = nav.child(track_hover(item, id));
         }
 
-        let mark_and_title = div()
-            .flex()
-            .items_center()
-            .gap(px(10.))
-            .child(mark(18., &t))
-            .child(
-                div()
-                    .font_family(theme::PIXEL)
-                    .font_weight(FontWeight::BOLD)
-                    .text_size(px(18.))
-                    .text_color(t.ink)
-                    .child("SunSet"),
-            );
         div()
             .flex()
             .flex_none()
             .items_center()
             .justify_between()
-            .h(px(56.))
-            .px(px(theme::PAGE_GUTTER))
-            .border_b_1()
-            .border_color(t.rule)
-            .child(mark_and_title)
+            .h(px(72.))
+            .px(px(theme::GUTTER))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .child(mark(18., &t))
+                    .child(
+                        text(theme::LABEL)
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(t.ink)
+                            .child("SunSet"),
+                    ),
+            )
             .child(nav)
     }
 
@@ -2020,7 +2031,7 @@ impl Launcher {
         let version = div()
             .flex()
             .gap(px(12.))
-            .child(caps(format!("LAUNCHER {}", backend::VERSION)).text_color(t.muted));
+            .child(caps(format!("Launcher {}", backend::VERSION)).text_color(t.muted));
         let links = div()
             .flex()
             .items_center()
@@ -2032,10 +2043,8 @@ impl Launcher {
             .flex_none()
             .items_center()
             .justify_between()
-            .h(px(44.))
-            .px(px(theme::PAGE_GUTTER))
-            .border_t_1()
-            .border_color(t.rule)
+            .h(px(48.))
+            .px(px(theme::GUTTER))
             .child(version)
             .child(links)
     }
@@ -2234,41 +2243,27 @@ impl Launcher {
 
     fn picker(&self, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
-        // "Nightly · ba6344a", a release's tag: the menu lists the full tags.
-        let label = self.selected().map_or_else(
-            || "No version".into(),
-            |tag| horizon_launcher::nightly::label(tag).unwrap_or_else(|| tag.clone()),
-        );
-        // As tall as Play: "Version" over the tag, and a chevron.
-        let n = t.night;
+        let label = self
+            .selected()
+            .cloned()
+            .unwrap_or_else(|| "No version".into());
         let mut wrap = div().relative().child(
-            keyboard(div().id("picker"), &t)
-                .relative()
+            div()
+                .id("picker")
                 .flex()
                 .items_center()
-                .gap(px(14.))
-                .h(px(theme::night::PLAY))
-                .pl(px(14.))
-                .pr(px(12.))
-                .rounded(px(theme::night::RADIUS_CONTROL))
-                .bg(plate::alpha(n.card_hi, n.card_hi_alpha))
-                .border_1()
-                .border_color(plate::alpha(n.stroke, n.stroke_alpha))
+                .gap(px(8.))
+                .h(px(theme::CONTROL_LARGE))
+                .px(px(16.))
+                .rounded(px(theme::RADIUS_PILL))
+                .bg(t.plate_soft)
+                .font_family(theme::MONO)
+                .text_size(px(theme::CAPTION.px))
+                .text_color(t.ink)
                 .cursor_pointer()
-                .hover(move |s| s.border_color(plate::alpha(n.stroke, 3. * n.stroke_alpha)))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(2.))
-                        .child(
-                            shell::text(theme::night::CAPTION, t.muted)
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .child(tr("Version").to_string()),
-                        )
-                        .child(shell::text(theme::night::UI, t.ink).child(label)),
-                )
-                .child(blocks::icon("chevron-down", 20., t.muted))
+                .hover(move |s| s.bg(t.plate))
+                .child(label)
+                .child(div().text_color(t.muted).text_size(px(10.)).child("▾"))
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     this.picker_open = !this.picker_open;
                     cx.notify();
@@ -2277,18 +2272,16 @@ impl Launcher {
         if self.picker_open {
             let mut menu = div()
                 .absolute()
-                .top(px(theme::night::PLAY + 6.))
-                .left_0()
-                .w(px(300.))
+                .top(px(theme::CONTROL_LARGE + 6.))
+                .right_0()
+                .w(px(260.))
                 .p(px(6.))
-                .rounded(px(theme::night::RADIUS_CONTROL))
+                .rounded(px(theme::RADIUS_PLATE))
                 .border_1()
-                .border_color(plate::alpha(n.stroke, 2. * n.stroke_alpha))
+                .border_color(t.rule)
                 .bg(t.surface)
                 .flex()
                 .flex_col();
-            // Picking a version keeps the selected instance on it; the launcher's own version
-            // (newest unless chosen otherwise on Versions) follows updates.
             let follows = self.launcher_version().cloned();
             for tag in &self.installed {
                 let selected = self.selected() == Some(tag);
@@ -2383,7 +2376,7 @@ impl Launcher {
         };
         let prepared = backend::is_prepared(&tag);
         // Prepared without sounds (#1035): Prepare again is the fix, so it stands out.
-        let silent = prepared && !backend::has_sounds(&tag);
+        let _silent = prepared && !backend::has_sounds(&tag);
         let version = java
             .as_ref()
             .map_or_else(|| backend::game_version(&tag), |j| j.minecraft.clone());
@@ -2401,9 +2394,9 @@ impl Launcher {
         let running = self.client.is_some() || self.starting_client.is_some();
         let play_label = if running { "Running" } else { "Play" };
         let mut play = button("play", play_label, Kind::Primary, &t)
-            .min_w(px(140.))
+            .min_w(px(132.))
             .h(px(theme::CONTROL_LARGE))
-            .px(px(32.))
+            .px(px(28.))
             .text_size(px(theme::UI.px));
         if !prepared || self.preparing || running {
             play = disabled(play);
@@ -2422,7 +2415,7 @@ impl Launcher {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(12.))
+                    .gap(px(8.))
                     .child(self.picker(cx))
                     .child(play),
             );
@@ -2437,11 +2430,7 @@ impl Launcher {
         let mut prepare = button(
             "prepare",
             if prepared { "Prepare again" } else { "Prepare" },
-            if prepared && !silent {
-                Kind::Ghost
-            } else {
-                Kind::Secondary
-            },
+            Kind::Ghost,
             &t,
         );
         if self.preparing {
@@ -2508,13 +2497,13 @@ impl Launcher {
             ));
 
         let watermark = div()
-            .mt(px(48.))
-            .ml(px(-8.))
+            .mt(px(32.))
+            .ml(px(-14.))
             .h(px(theme::WORDMARK.px * 0.74))
             .overflow_hidden()
             .text_size(px(theme::WORDMARK.px))
             .line_height(px(theme::WORDMARK.px))
-            .font_weight(FontWeight::BOLD)
+            .font_weight(FontWeight::MEDIUM)
             .text_color(if t.dark { t.plate_soft } else { t.plate })
             .child("sunset");
 
@@ -3862,7 +3851,7 @@ impl Render for Launcher {
         if self.opening.is_none() && window.focused(cx).is_none() {
             window.focus(&self.root_focus);
         }
-        let (sky, next) = self.sky.render(
+        let (_sky, next) = self.sky.render(
             &t.night,
             (size.width.into(), size.height.into()),
             window.scale_factor(),
@@ -3927,20 +3916,15 @@ impl Render for Launcher {
                                     .child(
                                         div()
                                             .flex()
-                                            .justify_center()
                                             .w_full()
                                             .min_w_0()
-                                            .px(px(theme::PAGE_GUTTER))
-                                            .pt(px(if self.page == Page::Play {
-                                                0.
-                                            } else {
-                                                28.
-                                            }))
+                                            .px(px(theme::GUTTER))
+                                            .pt(px(24.))
                                             .pb(px(48.))
                                             .child(
                                                 div()
                                                     .w_full()
-                                                    .max_w(px(1000.))
+                                                    .max_w(px(1152.))
                                                     .child(content),
                                             ),
                                     ),
@@ -4031,8 +4015,7 @@ impl Render for Launcher {
             .flex_col()
             .relative()
             .size_full()
-            .bg(t.side)
-            .child(sky)
+            .bg(t.page)
             .children(titlebar::render(&t, window))
             .child(root.flex_1().min_h_0())
             .children(titlebar::resize_handles(window))

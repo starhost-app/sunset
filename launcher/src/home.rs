@@ -26,10 +26,6 @@ impl Launcher {
                 .and_then(|r| backend::notes_summary(&r.body)),
             _ => None,
         };
-        let status = format!(
-            "MINECRAFT {game}  ·  {}",
-            if prepared { "READY" } else { "NEEDS PREPARING" }
-        );
         let note_text = match summary {
             Some(line) => format!("{}. {line}", tag.trim_start_matches('v')),
             None => format!(
@@ -40,17 +36,11 @@ impl Launcher {
         let state = div()
             .flex()
             .items_center()
-            .gap(px(8.))
+            .gap(px(10.))
+            .child(caps(format!("Minecraft {game}")).text_color(t.muted))
+            .child(div().size(px(4.)).rounded_full().bg(t.rule))
             .child(
-                div()
-                    .flex_none()
-                    .size(px(6.))
-                    .rounded_full()
-                    .bg(if prepared { t.success } else { t.warn }),
-            )
-            .child(
-                caps(status)
-                    .font_weight(FontWeight::BOLD)
+                caps(if prepared { "Ready" } else { "Needs preparing" })
                     .text_color(if prepared { t.success } else { t.warn }),
             );
         let mut hero = div()
@@ -58,23 +48,18 @@ impl Launcher {
             .flex_none()
             .flex_col()
             .gap(px(14.))
-            .pt(px(16.))
+            .pt(px(24.))
             .child(state)
             .child(
-                div()
-                    .font_family(theme::DISPLAY_FONT)
-                    .text_size(px(56.))
-                    .line_height(px(60.))
+                text(theme::DISPLAY)
                     .font_weight(FontWeight::BOLD)
                     .text_color(t.ink)
                     .child("SunSet"),
             )
             .child(
-                div()
-                    .text_size(px(14.))
-                    .line_height(px(20.))
+                text(theme::BODY)
+                    .max_w(px(560.))
                     .text_color(t.muted)
-                    .max_w(px(720.))
                     .child(note_text),
             );
         // A Java instance (no Horizon tag) isn't offered Horizon's updates.
