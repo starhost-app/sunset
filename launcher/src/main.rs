@@ -357,6 +357,10 @@ impl Launcher {
             settings.minecraft_dir = Some(backend::sunset_dir());
             settings.save();
         }
+        if settings.selected.as_ref().map_or(true, |s| s.starts_with("nightly")) {
+            settings.selected = Some(backend::SUNSET_VERSION.to_string());
+            settings.save();
+        }
         // Release builds on Linux put their entry back in the applications menu when there is
         // none or it starts a program that is gone (a moved or deleted binary), never over one
         // that works; `HORIZON_LAUNCHER_DESKTOP_ENTRY=1` does it in a development build.
@@ -1424,10 +1428,7 @@ fn version_tag(tag: &str) -> Div {
         .text_size(px(22.))
         .line_height(px(28.))
         .font_weight(FontWeight::MEDIUM)
-        .child(
-            horizon_launcher::nightly::label(tag)
-                .unwrap_or_else(|| tag.trim_start_matches('v').to_string()),
-        )
+        .child(backend::display_version(tag))
 }
 
 /// Horizon's mark: two stems, their reflection below, and the horizon across in the accent.
@@ -2245,12 +2246,55 @@ impl Launcher {
             .child(foot)
     }
 
+    fn account_selector(&self, cx: &mut Context<Self>) -> Div {
+        let t = self.theme;
+        let (name, _how) = self.who_plays();
+        let label = if name.is_empty() { "Offline".to_string() } else { name };
+        let mut wrap = div().relative().child(
+            div()
+                .id("account-selector")
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .h(px(theme::CONTROL_LARGE))
+                .px(px(16.))
+                .rounded(px(theme::RADIUS_PILL))
+                .bg(t.plate_soft)
+                .text_size(px(theme::CAPTION.px))
+                .text_color(t.ink)
+                .cursor_pointer()
+                .hover(move |s| s.bg(t.plate))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .child(blocks::icon("user", 14., t.muted))
+                        .child(
+                            div()
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(label),
+                        ),
+                )
+                .child(div().text_color(t.muted).text_size(px(10.)).child("▾"))
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.account_menu = !this.account_menu;
+                    this.picker_open = false;
+                    cx.notify();
+                })),
+        );
+        if let Some(menu) = self.account_menu(cx) {
+            wrap = wrap.child(menu);
+        }
+        wrap
+    }
+
     fn picker(&self, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
         let label = self
             .selected()
-            .cloned()
-            .unwrap_or_else(|| "No version".into());
+            .map(|s| backend::display_version(s))
+            .unwrap_or_else(|| backend::SUNSET_VERSION.into());
         let mut wrap = div().relative().child(
             div()
                 .id("picker")
@@ -2270,6 +2314,7 @@ impl Launcher {
                 .child(div().text_color(t.muted).text_size(px(10.)).child("▾"))
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     this.picker_open = !this.picker_open;
+                    this.account_menu = false;
                     cx.notify();
                 })),
         );
@@ -2288,8 +2333,10 @@ impl Launcher {
                 .flex_col();
             let follows = self.launcher_version().cloned();
             for tag in &self.installed {
-                let selected = self.selected() == Some(tag);
+                let selected = self.selected() == Some(tag)
+                    || (self.selected().is_none() && tag == backend::SUNSET_VERSION);
                 let tag = tag.clone();
+                let display_tag = backend::display_version(&tag);
                 let latest = follows.as_ref() == Some(&tag);
                 menu = menu.child(
                     div()
@@ -2305,7 +2352,7 @@ impl Launcher {
                         .text_color(t.ink)
                         .cursor_pointer()
                         .hover(move |s| s.bg(t.plate_soft))
-                        .child(tag.clone())
+                        .child(display_tag)
                         .child(
                             div()
                                 .flex()
@@ -2396,17 +2443,34 @@ impl Launcher {
             None => self.hero(&tag, &version, prepared, cx),
         };
         let running = self.client.is_some() || self.starting_client.is_some();
-        let play_label = if running { "Running" } else { "Play" };
+        let play_label = if running {
+            "Running"
+        } else if self.preparing {
+            "Preparing…"
+        } else if !prepared {
+            "Prepare"
+        } else {
+            "Play"
+        };
         let mut play = button("play", play_label, Kind::Primary, &t)
             .min_w(px(132.))
             .h(px(theme::CONTROL_LARGE))
             .px(px(28.))
             .text_size(px(theme::UI.px));
-        if !prepared || self.preparing || running {
+        if self.preparing || running {
             play = disabled(play);
+        } else if !prepared {
+            play = play.on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                this.picker_open = false;
+                this.account_menu = false;
+                this.play_when_prepared = this.selected().cloned();
+                this.prepare(backend::MinecraftFrom::Install);
+                cx.notify();
+            }));
         } else {
             play = play.on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                 this.picker_open = false;
+                this.account_menu = false;
                 this.play();
                 cx.notify();
             }));
@@ -2421,86 +2485,10 @@ impl Launcher {
                     .flex()
                     .items_center()
                     .gap(px(8.))
+                    .child(self.account_selector(cx))
                     .child(self.picker(cx))
                     .child(play),
             );
-
-        let resources_value = if self.preparing {
-            tr("Preparing…").to_string()
-        } else if prepared {
-            format!("Prepared for Minecraft {version}")
-        } else {
-            format!("Not prepared. SunSet needs the files of your own Minecraft {version}.")
-        };
-        let mut prepare = button(
-            "prepare",
-            if prepared { "Prepare again" } else { "Prepare" },
-            Kind::Ghost,
-            &t,
-        );
-        if self.preparing {
-            prepare = disabled(prepare);
-        } else {
-            prepare = prepare.on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                this.prepare(backend::MinecraftFrom::Install);
-                cx.notify();
-            }));
-        }
-        let minecraft = self.settings.minecraft_dir.as_deref().map_or_else(
-            || {
-                div()
-                    .child("Not found. Choose the official launcher's game folder.")
-                    .into_any_element()
-            },
-            |p| {
-                div()
-                    .font_family(theme::MONO)
-                    .child(short(p))
-                    .into_any_element()
-            },
-        );
-        let who = match self.accounts.selected() {
-            Some(a) => format!("{} (Microsoft account)", a.name),
-            None => "Offline: online servers need a Microsoft account.".to_string(),
-        };
-        let rows = div()
-            .flex()
-            .flex_col()
-            .w_full()
-            .border_t_1()
-            .border_color(t.rule)
-            .child(index_row(
-                1,
-                "Resources",
-                Some(div().child(resources_value).into_any_element()),
-                Some(prepare.into_any_element()),
-                &t,
-            ))
-            .child(index_row(
-                2,
-                "Minecraft folder",
-                Some(minecraft),
-                Some(
-                    button("choose-mc", "Choose…", Kind::Ghost, &t)
-                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.choose_folder(cx)))
-                        .into_any_element(),
-                ),
-                &t,
-            ))
-            .child(index_row(
-                3,
-                "Playing as",
-                Some(div().child(who).into_any_element()),
-                Some(
-                    button("accounts", "Accounts…", Kind::Ghost, &t)
-                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                            this.go(Page::Settings);
-                            cx.notify();
-                        }))
-                        .into_any_element(),
-                ),
-                &t,
-            ));
 
         let wm_size = (window_width * 0.18).max(theme::WORDMARK.px);
         let wm_h = wm_size * 0.52;
@@ -2523,8 +2511,7 @@ impl Launcher {
             .gap(px(28.))
             .w_full()
             .child(hero)
-            .child(actions)
-            .child(rows);
+            .child(actions);
         if self.preparing {
             let last = self.prepare_log.back().cloned().unwrap_or_default();
             top_content = top_content.child(

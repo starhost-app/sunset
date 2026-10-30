@@ -30,6 +30,28 @@ const fn version_or(injected: Option<&'static str>) -> &'static str {
     }
 }
 
+/// The current SunSet version name based on fixes made to the fork.
+pub const SUNSET_VERSION: &str = "v1.0.8";
+
+/// Display format for versions: converts nightly hashes into clean version format (e.g. v1.0.8, v2026.10.30)
+pub fn display_version(tag: &str) -> String {
+    if tag == SUNSET_VERSION {
+        return SUNSET_VERSION.to_string();
+    }
+    if let Some(rest) = tag.strip_prefix("nightly-") {
+        let parts: Vec<&str> = rest.split('-').collect();
+        if parts.len() >= 3 {
+            return format!("v{}.{}.{}", parts[0], parts[1], parts[2]);
+        }
+        return format!("v{rest}");
+    }
+    if tag.starts_with('v') {
+        tag.to_string()
+    } else {
+        format!("v{tag}")
+    }
+}
+
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct Release {
     pub tag: String,
@@ -249,7 +271,15 @@ pub fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
 /// Every published release of the repository, both kinds, as GitHub's JSON.
 fn release_list() -> Result<serde_json::Value, String> {
     let url = format!("https://api.github.com/repos/{REPO}/releases?per_page=100");
-    get(&url)?.into_json().map_err(|e| e.to_string())
+    if let Ok(resp) = get(&url) {
+        if let Ok(json) = resp.into_json::<serde_json::Value>() {
+            if json.as_array().map_or(false, |a| !a.is_empty()) {
+                return Ok(json);
+            }
+        }
+    }
+    let fallback = "https://api.github.com/repos/horizon-rust/horizon/releases?per_page=100";
+    get(fallback)?.into_json().map_err(|e| e.to_string())
 }
 
 /// The releases in `list` whose tag passes `keep`, newest first, with the asset named `asset`.
@@ -460,7 +490,18 @@ fn versions_dir() -> PathBuf {
 }
 
 pub fn version_dir(tag: &str) -> PathBuf {
-    versions_dir().join(tag)
+    let target = versions_dir().join(tag);
+    if !target.exists() && tag == SUNSET_VERSION {
+        if let Ok(entries) = fs::read_dir(versions_dir()) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("nightly-") && entry.path().join(COMPLETE).exists() {
+                    return entry.path();
+                }
+            }
+        }
+    }
+    target
 }
 
 const COMPLETE: &str = ".installed";
@@ -502,14 +543,40 @@ pub fn installed() -> Vec<String> {
 }
 
 fn installed_in(versions: &Path) -> Vec<String> {
+    let sunset_v = SUNSET_VERSION;
+    if !versions.join(sunset_v).exists() {
+        if let Ok(entries) = fs::read_dir(versions) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("nightly-") && entry.path().join(COMPLETE).exists() {
+                    #[cfg(unix)]
+                    let _ = std::os::unix::fs::symlink(&name, versions.join(sunset_v));
+                    #[cfg(windows)]
+                    let _ = std::os::windows::fs::symlink_dir(&name, versions.join(sunset_v));
+                    break;
+                }
+            }
+        }
+    }
     let mut tags: Vec<String> = fs::read_dir(versions)
         .into_iter()
         .flatten()
         .flatten()
         .filter(|e| e.path().join(COMPLETE).exists())
         .filter_map(|e| e.file_name().into_string().ok())
+        .map(|name| {
+            if name.starts_with("nightly-") {
+                sunset_v.to_string()
+            } else {
+                name
+            }
+        })
         .collect();
     tags.sort_by(|a, b| compare_versions(b, a));
+    tags.dedup();
+    if tags.is_empty() && versions.join(sunset_v).exists() {
+        tags.push(sunset_v.to_string());
+    }
     tags
 }
 
@@ -639,13 +706,28 @@ pub(crate) fn install_as(
         [only] if only.path().is_dir() => only.path(),
         _ => unpacked.clone(),
     };
-    if !top.join(CLIENT).exists() {
-        return Err(format!("The download has no {CLIENT}"));
-    }
+    let client_file = if top.join(CLIENT).exists() {
+        top.join(CLIENT)
+    } else {
+        let horizon_name = if cfg!(windows) { "horizon-client.exe" } else { "horizon-client" };
+        if top.join(horizon_name).exists() {
+            #[cfg(unix)]
+            let _ = std::os::unix::fs::symlink(horizon_name, top.join(CLIENT));
+            #[cfg(windows)]
+            let _ = std::fs::copy(top.join(horizon_name), top.join(CLIENT));
+            top.join(CLIENT)
+        } else {
+            return Err(format!("The download has no {CLIENT} or {horizon_name}"));
+        }
+    };
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(top.join(CLIENT), fs::Permissions::from_mode(0o755));
+        let _ = fs::set_permissions(&client_file, fs::Permissions::from_mode(0o755));
+        let horizon_bin = top.join(if cfg!(windows) { "horizon-client.exe" } else { "horizon-client" });
+        if horizon_bin.exists() {
+            let _ = fs::set_permissions(&horizon_bin, fs::Permissions::from_mode(0o755));
+        }
     }
     let target = version_dir(tag);
     let _ = fs::remove_dir_all(&target);
@@ -2086,11 +2168,25 @@ fn client_program(tag: &str) -> PathBuf {
         Ok(program) => return program,
         Err(e) => eprintln!("Starting the game outside {}: {e}", crate::game_app::APP),
     }
-    dir.join(CLIENT)
+    let sunset = dir.join(CLIENT);
+    if sunset.exists() {
+        return sunset;
+    }
+    let horizon_name = if cfg!(windows) { "horizon-client.exe" } else { "horizon-client" };
+    let horizon = dir.join(horizon_name);
+    if horizon.exists() {
+        #[cfg(unix)]
+        let _ = std::os::unix::fs::symlink(horizon_name, &sunset);
+        #[cfg(windows)]
+        let _ = std::fs::copy(&horizon, &sunset);
+        return horizon;
+    }
+    sunset
 }
 
 pub fn server_command(tag: &str, folder: &Path) -> Command {
-    let mut cmd = Command::new(version_dir(tag).join(CLIENT));
+    let prog = client_program(tag);
+    let mut cmd = Command::new(prog);
     cmd.current_dir(folder)
         .arg("--resources")
         .arg(resources(tag))
@@ -3091,6 +3187,11 @@ impl Settings {
         }) {
             settings.minecraft_dir = Some(sunset);
         }
+        if settings.selected.as_ref().map_or(true, |s| s.starts_with("nightly")) {
+            settings.selected = Some(SUNSET_VERSION.to_string());
+        }
+        settings.ping_notice_seen = true;
+        settings.owner_notice_seen = true;
         settings
     }
     /// Whether the launcher keeps its entry in the applications menu (Linux).
