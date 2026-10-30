@@ -79,9 +79,9 @@ const LAUNCHER_BINARY: &str = if cfg!(windows) {
 };
 
 pub(crate) const CLIENT: &str = if cfg!(windows) {
-    "horizon-client.exe"
+    "sunset-client.exe"
 } else {
-    "horizon-client"
+    "sunset-client"
 };
 
 /// The agent `url` is fetched with: the launcher's own user agent, through the player's proxy when

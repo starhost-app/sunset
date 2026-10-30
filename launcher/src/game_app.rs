@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 pub const APP: &str = "Horizon.app";
 
 /// The game, then horizon-ctl, which the game looks for beside itself (Copy Connection Details).
-const PROGRAMS: [&str; 2] = ["horizon-client", "horizon-ctl"];
+const PROGRAMS: [&str; 2] = ["sunset-client", "horizon-ctl"];
 
 const ICON: &[u8] = include_bytes!("../../packaging/icons/horizon.icns");
 
@@ -25,7 +25,7 @@ const INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 	<key>CFBundleDisplayName</key>
 	<string>Horizon</string>
 	<key>CFBundleExecutable</key>
-	<string>horizon-client</string>
+	<string>sunset-client</string>
 	<key>CFBundleIconFile</key>
 	<string>horizon</string>
 	<key>CFBundleIdentifier</key>
@@ -90,15 +90,15 @@ mod tests {
         let version = std::env::temp_dir().join(format!("horizon-game-app-{}", std::process::id()));
         let _ = fs::remove_dir_all(&version);
         fs::create_dir_all(&version).unwrap();
-        fs::write(version.join("horizon-client"), "game 1").unwrap();
+        fs::write(version.join("sunset-client"), "game 1").unwrap();
         fs::write(version.join("horizon-ctl"), "ctl").unwrap();
 
         let program = ensure(&version).unwrap();
         assert_eq!(
             program,
-            version.join("Horizon.app/Contents/MacOS/horizon-client")
+            version.join("Horizon.app/Contents/MacOS/sunset-client")
         );
-        assert!(same_file(&program, &version.join("horizon-client")));
+        assert!(same_file(&program, &version.join("sunset-client")));
         assert!(same_file(
             &version.join("Horizon.app/Contents/MacOS/horizon-ctl"),
             &version.join("horizon-ctl")
@@ -111,8 +111,8 @@ mod tests {
         );
 
         // A new build copied over the version's game: the bundle runs it, not the old one.
-        fs::remove_file(version.join("horizon-client")).unwrap();
-        fs::write(version.join("horizon-client"), "game 2").unwrap();
+        fs::remove_file(version.join("sunset-client")).unwrap();
+        fs::write(version.join("sunset-client"), "game 2").unwrap();
         assert_eq!(
             fs::read_to_string(ensure(&version).unwrap()).unwrap(),
             "game 2"
@@ -126,7 +126,7 @@ mod tests {
             std::env::temp_dir().join(format!("horizon-game-app-old-{}", std::process::id()));
         let _ = fs::remove_dir_all(&version);
         fs::create_dir_all(&version).unwrap();
-        fs::write(version.join("horizon-client"), "game").unwrap();
+        fs::write(version.join("sunset-client"), "game").unwrap();
         assert!(ensure(&version).unwrap().exists());
         assert!(!version
             .join("Horizon.app/Contents/MacOS/horizon-ctl")

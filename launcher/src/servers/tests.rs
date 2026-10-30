@@ -56,7 +56,7 @@ fn programs_are_laid_out_as_install_sh_does() {
     let version = root.join("versions/v1");
     fs::create_dir_all(version.join(".local/horizon-client/26.3")).unwrap();
     fs::write(version.join(PROGRAM), "server").unwrap();
-    fs::write(version.join("horizon-client"), "game").unwrap();
+    fs::write(version.join("sunset-client"), "game").unwrap();
     fs::write(version.join(".installed"), "").unwrap();
     crate::game_app::ensure(&version).unwrap();
     fs::write(
