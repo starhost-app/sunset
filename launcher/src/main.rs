@@ -3918,11 +3918,9 @@ impl Render for Launcher {
                                         div()
                                             .flex()
                                             .flex_col()
-                                            .flex_1()
-                                            .size_full()
-                                            .min_h_full()
                                             .w_full()
                                             .min_w_0()
+                                            .when(self.page == Page::Play, |d| d.min_h_full().flex_1())
                                             .px(px(theme::GUTTER))
                                             .pt(px(24.))
                                             .when(self.page != Page::Play, |d| d.pb(px(48.)))
@@ -3930,10 +3928,8 @@ impl Render for Launcher {
                                                 div()
                                                     .flex()
                                                     .flex_col()
-                                                    .flex_1()
-                                                    .size_full()
-                                                    .min_h_full()
                                                     .w_full()
+                                                    .when(self.page == Page::Play, |d| d.min_h_full().flex_1())
                                                     .child(content),
                                             ),
                                     ),

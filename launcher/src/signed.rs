@@ -12,6 +12,10 @@ pub fn asset_url(tag: &str, name: &str) -> String {
     format!("https://github.com/{REPO}/releases/download/{tag}/{name}")
 }
 
+pub fn fallback_asset_url(tag: &str, name: &str) -> String {
+    format!("https://github.com/horizon-rust/horizon/releases/download/{tag}/{name}")
+}
+
 /// The signed SHA-256 of `asset` in release `tag`, fetching its SHA256SUMS and SHA256SUMS.sig
 /// with `fetch` (None: the release has no such file), or why the download must be refused. A
 /// release from before signing gets its pinned SHA-256, whatever files it carries now.
@@ -24,9 +28,14 @@ pub fn digest(
     if let Some(hex) = horizon_release_sign::legacy_digest(tag, asset) {
         return Ok(hex.to_owned());
     }
-    let sums = fetch(&asset_url(tag, SUMS))?;
-    let signature = fetch(&asset_url(tag, SIGNATURE))?
+    let mut sums = fetch(&asset_url(tag, SUMS))?;
+    let mut signature = fetch(&asset_url(tag, SIGNATURE))?
         .map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
+    if sums.is_none() && REPO != "horizon-rust/horizon" {
+        sums = fetch(&fallback_asset_url(tag, SUMS))?;
+        signature = fetch(&fallback_asset_url(tag, SIGNATURE))?
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
+    }
     horizon_release_sign::signed_digest(tag, asset, sums.as_deref(), signature.as_deref(), keys)
 }
 
@@ -39,9 +48,14 @@ pub fn nightly_digest(
     keys: &[PublicKey],
     fetch: impl Fn(&str) -> Result<Option<Vec<u8>>, String>,
 ) -> Result<String, String> {
-    let sums = fetch(&asset_url(tag, SUMS))?;
-    let signature = fetch(&asset_url(tag, SIGNATURE))?
+    let mut sums = fetch(&asset_url(tag, SUMS))?;
+    let mut signature = fetch(&asset_url(tag, SIGNATURE))?
         .map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
+    if sums.is_none() && REPO != "horizon-rust/horizon" {
+        sums = fetch(&fallback_asset_url(tag, SUMS))?;
+        signature = fetch(&fallback_asset_url(tag, SIGNATURE))?
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
+    }
     horizon_release_sign::nightly_digest(asset, sums.as_deref(), signature.as_deref(), keys)
 }
 

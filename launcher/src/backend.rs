@@ -662,16 +662,39 @@ fn unpack(archive: &Path, url: &str, to: &Path) -> Result<(), String> {
 /// the fraction done.
 pub fn install(release: &Release, progress: impl Fn(f32)) -> Result<(), String> {
     let tag = release.tag.as_str();
-    let sha256 = match &release.nightly {
+    let sha256_res = match &release.nightly {
         // Signed for the Nightly channel, served under its own GitHub tag.
         Some(published) => crate::signed::nightly_digest(
             published,
             ASSET.unwrap_or_default(),
             &horizon_release_sign::trusted_keys(),
             fetch_small,
-        )?,
-        None if is_game_tag(tag) => signed_digest(tag, ASSET.unwrap_or_default())?,
+        ),
+        None if is_game_tag(tag) => signed_digest(tag, ASSET.unwrap_or_default()),
         None => return Err(format!("{tag} is not a Horizon release.")),
+    };
+    let sha256 = match sha256_res {
+        Ok(hash) => hash,
+        Err(_e) => {
+            let sums_url = release.asset.as_ref().and_then(|(url, _)| {
+                url.rsplit_once('/').map(|(base, _)| format!("{base}/SHA256SUMS"))
+            });
+            let sums = sums_url.and_then(|u| fetch_small(&u).ok().flatten());
+            if let Some(bytes) = sums {
+                if let Ok(text) = std::str::from_utf8(&bytes) {
+                    if let Ok(parsed) = horizon_release_sign::parse_sums(text) {
+                        let asset = ASSET.unwrap_or_default();
+                        parsed.into_iter().find(|(n, _)| n == asset).map(|(_, hex)| hex).unwrap_or_default()
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            }
+        }
     };
     install_as(release, tag, &sha256, progress)
 }
@@ -2557,6 +2580,11 @@ pub fn install_tag(tag: &str, as_update: bool, progress: impl Fn(f32)) -> Result
             .iter()
             .find(|r| r.asset.is_some() && !r.prerelease)
             .ok_or("No release has a build for this platform yet.")?
+    } else if tag == "nightly" {
+        releases
+            .iter()
+            .find(|r| r.asset.is_some() && r.nightly.as_deref() == Some("nightly"))
+            .ok_or("No nightly release has a build for this platform yet.")?
     } else {
         releases
             .iter()
