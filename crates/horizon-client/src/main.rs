@@ -40,14 +40,14 @@ fn main() {
     if !help {
         logging::init(&home, thread);
         // The log's first line names the build, so a bug report that carries the log says which one it was.
-        log::info!("Horizon {}", crash::version());
+        log::info!("SunSet {}", crash::version());
         crash::install(home.clone(), side);
     }
     raise_open_file_limit();
     if let Err(error) = game::run() {
         // A bad command line is the caller's mistake, not a crash: no report.
         let usage = error.is::<game::UsageError>();
-        log::error!("Horizon: {error}");
+        log::error!("SunSet: {error}");
         logging::flush();
         // The report's path is the last line on stderr (crash::SAVED_LINE).
         if !help && !usage {

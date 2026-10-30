@@ -53,16 +53,25 @@ pub fn set_game_home(home: PathBuf) {
     let _ = HOME.set(home);
 }
 
-/// Where the launcher runs the game and keeps its saves: `--home`, else `HORIZON_HOME`, else
-/// `horizon` in the platform data folder (launcher/src/backend.rs `game_home`).
+/// Where the launcher runs the game and keeps its saves: `--home`, else `SUNSET_HOME` or `HORIZON_HOME`, else
+/// `sunset` in the platform data folder (launcher/src/backend.rs `game_home`).
 pub fn game_home() -> PathBuf {
     if let Some(home) = HOME.get() {
         return home.clone();
     }
-    match std::env::var_os("HORIZON_HOME").filter(|h| !h.is_empty()) {
-        Some(h) => PathBuf::from(h),
-        None => data_dir().join("horizon"),
+    if let Some(h) = std::env::var_os("SUNSET_HOME")
+        .or_else(|| std::env::var_os("HORIZON_HOME"))
+        .filter(|h| !h.is_empty())
+    {
+        return PathBuf::from(h);
     }
+    let base = data_dir();
+    let sunset = base.join("sunset");
+    let horizon = base.join("horizon");
+    if !sunset.exists() && horizon.exists() {
+        let _ = std::fs::rename(&horizon, &sunset);
+    }
+    sunset
 }
 
 /// `logs/` and `crash-reports/` of a game folder.

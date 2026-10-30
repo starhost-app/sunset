@@ -239,7 +239,7 @@ fn list_in(game_home: &Path, data: &Path) -> Vec<Instance> {
     let mut store = Store::load(data);
     let mut found = vec![(
         DEFAULT.to_string(),
-        "Horizon".to_string(),
+        "SunSet".to_string(),
         Kind::Default,
         game_home.to_path_buf(),
         game_home.to_path_buf(),

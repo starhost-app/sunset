@@ -441,14 +441,21 @@ pub fn links() -> Links {
         .map_or_else(Links::default, |text| Links::parse(&text))
 }
 
-/// The launcher's data folder; `HORIZON_LAUNCHER_HOME` overrides it (for tests and scripts).
+/// The launcher's data folder; `SUNSET_LAUNCHER_HOME` or `HORIZON_LAUNCHER_HOME` overrides it.
 pub fn data_dir() -> PathBuf {
-    if let Some(home) = std::env::var_os("HORIZON_LAUNCHER_HOME").filter(|h| !h.is_empty()) {
+    if let Some(home) = std::env::var_os("SUNSET_LAUNCHER_HOME")
+        .or_else(|| std::env::var_os("HORIZON_LAUNCHER_HOME"))
+        .filter(|h| !h.is_empty())
+    {
         return PathBuf::from(home);
     }
-    dirs::data_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("horizon-launcher")
+    let base = dirs::data_dir().unwrap_or_else(std::env::temp_dir);
+    let sunset = base.join("sunset-launcher");
+    let horizon = base.join("horizon-launcher");
+    if !sunset.exists() && horizon.exists() {
+        let _ = std::fs::rename(&horizon, &sunset);
+    }
+    sunset
 }
 
 fn versions_dir() -> PathBuf {
@@ -1833,16 +1840,22 @@ pub fn prepare_in_process(
     .map(|_| ())
 }
 
-/// Where the game keeps saves and options.txt: `HORIZON_HOME`, else `horizon` in the platform's
-/// data folder (~/.local/share/horizon on Linux, as the release folders' horizon.sh uses). It is
-/// never inside a version folder, so installing, updating or removing a version keeps the saves.
+/// Where the game keeps saves and options.txt: `SUNSET_HOME` or `HORIZON_HOME`, else `sunset` in the platform's
+/// data folder (~/.local/share/sunset on Linux).
 pub fn game_home() -> PathBuf {
-    if let Some(home) = std::env::var_os("HORIZON_HOME").filter(|h| !h.is_empty()) {
+    if let Some(home) = std::env::var_os("SUNSET_HOME")
+        .or_else(|| std::env::var_os("HORIZON_HOME"))
+        .filter(|h| !h.is_empty())
+    {
         return PathBuf::from(home);
     }
-    dirs::data_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("horizon")
+    let base = dirs::data_dir().unwrap_or_else(std::env::temp_dir);
+    let sunset = base.join("sunset");
+    let horizon = base.join("horizon");
+    if !sunset.exists() && horizon.exists() {
+        let _ = std::fs::rename(&horizon, &sunset);
+    }
+    sunset
 }
 
 /// Whether No AI is on: every AI feature hidden and off (`horizon_core::no_ai`, kept in the
