@@ -1,5 +1,6 @@
 /.local/
-/target/
+/target
+auth.json
 **/__pycache__/
 *.py[cod]
 /.venv/

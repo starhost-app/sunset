@@ -48,7 +48,7 @@ fn resolve(var: Option<&str>) -> Option<String> {
     match var.map(str::trim) {
         Some("off" | "none" | "0") => None,
         Some(url) if !url.is_empty() => Some(url.trim_end_matches('/').to_owned()),
-        _ => Some(DEFAULT_ENDPOINT.to_owned()),
+        _ => None,
     }
 }
 
@@ -112,9 +112,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_endpoint_defaults_to_the_server_and_can_be_moved_or_turned_off() {
-        assert_eq!(resolve(None).as_deref(), Some(DEFAULT_ENDPOINT));
-        assert_eq!(resolve(Some(" ")).as_deref(), Some(DEFAULT_ENDPOINT));
+    fn the_endpoint_defaults_to_none_and_can_be_set_or_turned_off() {
+        assert_eq!(resolve(None).as_deref(), None);
+        assert_eq!(resolve(Some(" ")).as_deref(), None);
         assert_eq!(
             resolve(Some("http://127.0.0.1:8080/")).as_deref(),
             Some("http://127.0.0.1:8080")

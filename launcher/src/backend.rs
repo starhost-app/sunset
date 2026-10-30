@@ -9,8 +9,8 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
-pub const REPO: &str = "horizon-rust/horizon";
-pub const README_URL: &str = "https://github.com/horizon-rust/horizon/blob/main/launcher/README.md";
+pub const REPO: &str = "starhost-app/sunset";
+pub const README_URL: &str = "https://github.com/starhost-app/sunset/blob/main/launcher/README.md";
 /// The players' page on connecting an AI agent (the website's docs/agents.md).
 pub const AGENT_DOCS_URL: &str = "https://playhorizon.dev/docs/agents";
 /// This launcher's version: the release workflow sets `HORIZON_LAUNCHER_VERSION` from the
@@ -109,17 +109,7 @@ pub fn get_bytes(url: &str) -> Result<Vec<u8>, String> {
 }
 
 pub(crate) fn get(url: &str) -> Result<ureq::Response, String> {
-    let mut request = agent(url).get(url);
-    // CI runners share addresses and hit GitHub's anonymous rate limit; they pass their own token.
-    if let Some(token) = std::env::var("HORIZON_GITHUB_TOKEN")
-        .ok()
-        .filter(|t| !t.is_empty())
-    {
-        if url.starts_with("https://api.github.com/") {
-            request = request.set("Authorization", &format!("Bearer {token}"));
-        }
-    }
-    request.call().map_err(|e| match e {
+    agent(url).get(url).call().map_err(|e| match e {
         ureq::Error::Status(403, _) => {
             "GitHub's rate limit was reached. Try again in a few minutes.".into()
         }
@@ -415,9 +405,9 @@ impl Default for Links {
     /// What the launcher uses until (or unless) it can read links.json.
     fn default() -> Self {
         Self {
-            discord: "https://discord.gg/HcTeMZxe5E".into(),
-            sponsor: "https://github.com/sponsors/ludovic111".into(),
-            website: "https://playhorizon.dev".into(),
+            discord: "".into(),
+            sponsor: "".into(),
+            website: "https://github.com/starhost-app/sunset".into(),
         }
     }
 }
@@ -3996,12 +3986,10 @@ pub fn {f}("
     #[test]
     fn links_fall_back_to_the_built_in_ones() {
         let defaults = Links::default();
-        assert_eq!(defaults.discord, "https://discord.gg/HcTeMZxe5E");
-        assert_eq!(defaults.sponsor, "https://github.com/sponsors/ludovic111");
-        assert_eq!(defaults.website, "https://playhorizon.dev");
+        assert_eq!(defaults.website, "https://github.com/starhost-app/sunset");
         // The file on main says the same thing as the defaults.
         let file = Links::parse(
-            r#"{"discord": "https://discord.gg/HcTeMZxe5E", "sponsor": "https://github.com/sponsors/ludovic111", "website": "https://playhorizon.dev"}"#,
+            r#"{"discord": "", "sponsor": "", "website": "https://github.com/starhost-app/sunset"}"#,
         );
         assert_eq!(file, defaults);
         // Unreadable or missing, offline included: the defaults.

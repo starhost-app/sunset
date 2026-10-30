@@ -893,3 +893,31 @@ fn the_java_edition_plays_as_an_owner_even_offline() {
         NoOwner.to_string()
     );
 }
+
+#[test]
+fn json_file_store_persists_tokens_in_json_file() {
+    let dir = std::env::temp_dir().join(format!("horizon-json-store-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let file = dir.join("tokens.json");
+    let store = JsonFileStore::new(file.clone());
+    assert!(store.persistent());
+    assert_eq!(store.get("key1").unwrap(), None);
+
+    store.set("key1", "secret_token_123").unwrap();
+    assert_eq!(store.get("key1").unwrap().as_deref(), Some("secret_token_123"));
+
+    // Reload from file to ensure it was written to disk as valid JSON
+    let reloaded = JsonFileStore::new(file.clone());
+    assert_eq!(reloaded.get("key1").unwrap().as_deref(), Some("secret_token_123"));
+
+    // Check JSON content
+    let raw = std::fs::read_to_string(&file).unwrap();
+    assert!(raw.contains("secret_token_123"));
+
+    store.delete("key1").unwrap();
+    assert_eq!(store.get("key1").unwrap(), None);
+    let reloaded_after_delete = JsonFileStore::new(file);
+    assert_eq!(reloaded_after_delete.get("key1").unwrap(), None);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

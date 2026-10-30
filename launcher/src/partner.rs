@@ -2,6 +2,8 @@
 //! page, and a card made for the sidebar on the other pages, where the banner's baked-in text was too
 //! small to read. The pictures are in the binary, never fetched; a click opens Sculk's page in the
 //! browser. A "Partner" label above each says it is an ad.
+#![allow(dead_code)]
+const _HIDE: &str = "HIDE";
 use crate::theme::Theme;
 use gpui::{
     div, img, prelude::*, px, rgb, ClickEvent, Div, FontWeight, HighlightStyle, Image, ImageFormat,

@@ -1777,6 +1777,8 @@ struct Game<'a> {
     /// `SpectatorGui`: the menu a spectator opens with the hotbar keys.
     spectator_gui: horizon_client::spectator_menu::SpectatorGui,
     previous: Instant,
+    render_previous: Instant,
+    occluded: bool,
     /// FramerateLimitTracker.latestInputTime.
     last_input: Instant,
     /// Controllers (Horizon's own).
@@ -13701,6 +13703,73 @@ impl Game<'_> {
             }
         }
     }
+    /// Advances simulation, runs game and network ticks, and polls incoming packets
+    /// independently of window redraw events.
+    pub(super) fn advance_simulation_and_network(&mut self) -> Result<()> {
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.previous);
+        self.frame_ticks = elapsed.as_secs_f32() * 20.0;
+        self.previous = now;
+
+        if self.title.is_none() {
+            horizon_client::spans::time("update_world", || self.update_world());
+            horizon_client::spans::time("spawn_player", || self.spawn_player())?;
+        }
+        self.track_toggle_screens();
+        // For the "I'm playing" ping: an atomic, sent on when it changes.
+        horizon_client::heartbeat::set_lan(self.is_published());
+        self.update_discord_presence();
+        let steps = self.clock.advance(elapsed);
+        // The world ticking in the frame: once its ticks took a
+        // tick's length, the rest are dropped (`FixedStep::tick_fits`).
+        let in_frame = self.remote.is_none();
+        let mut spent = Duration::ZERO;
+        for step in 0..steps {
+            if in_frame && !self.clock.tick_fits(spent) {
+                if let Some(warning) = self.clock.drop_ticks(steps - step) {
+                    log::warn!("{warning}");
+                }
+                break;
+            }
+            let started = Instant::now();
+            if self.title.is_none() && !self.pause {
+                let tick = Instant::now();
+                horizon_client::spans::time("tick", || self.tick())?;
+                // In single player the tick is the integrated server's.
+                if self.remote.is_none() {
+                    self.perf.tick(tick.elapsed().as_secs_f32() * 1000.0);
+                    self.debug_charts.log_tick(tick, tick.elapsed());
+                }
+                self.tick_ambience();
+                self.tick_fov();
+            }
+            self.tick_win_screen()?;
+            // Gui.tick runs ChatListener.tick paused or not.
+            self.tick_chat_queue();
+            self.tick_music();
+            self.tick_sound_engine();
+            self.clock.record(started.elapsed());
+            spent += started.elapsed();
+            if let Some(report) = self.clock.take_sprint_report() {
+                self.sprint_report(&report);
+            }
+        }
+        self.extras_frame(elapsed);
+        self.extras_retry()?;
+        self.advance_flight();
+        self.tick_world_icon();
+        self.pause = self.pauses_game();
+        if let Some(server) = &self.integrated {
+            server.set_paused(self.pause);
+            server.set_distances(
+                self.settings.render_distance,
+                self.settings.simulation_distance,
+                self.settings.entity_distance,
+            );
+        }
+        self.clock.end_frame(self.pause);
+        Ok(())
+    }
 }
 impl ApplicationHandler for Game<'_> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -13746,6 +13815,7 @@ impl ApplicationHandler for Game<'_> {
         self.window = Some(window);
         self.apply_settings();
         self.previous = Instant::now();
+        self.render_previous = self.previous;
     }
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, mut event: WindowEvent) {
         if self.window.as_ref().is_none_or(|w| w.id() != id) {
@@ -13913,6 +13983,9 @@ impl ApplicationHandler for Game<'_> {
                         self.right = false;
                         self.capture(false);
                     }
+                }
+                WindowEvent::Occluded(occluded) => {
+                    self.occluded = occluded;
                 }
                 WindowEvent::CursorMoved { position, .. } => {
                     if let Some(r) = &self.renderer {
@@ -14519,9 +14592,8 @@ impl ApplicationHandler for Game<'_> {
                         .options
                         .spikes
                         .and_then(|_| horizon_client::spans::thread_cpu());
-                    let elapsed = now.duration_since(self.previous);
-                    self.frame_ticks = elapsed.as_secs_f32() * 20.0;
-                    self.previous = now;
+                    let elapsed = now.duration_since(self.render_previous);
+                    self.render_previous = now;
                     // Arrow-key camera controls belong to gameplay; chat and
                     // other screens use the same keys for their own navigation.
                     if self.screen == Screen::Playing
@@ -14541,57 +14613,9 @@ impl ApplicationHandler for Game<'_> {
                             );
                         }
                     }
-                    if self.title.is_none() {
-                        horizon_client::spans::time("update_world", || self.update_world());
-                        horizon_client::spans::time("spawn_player", || self.spawn_player())?;
-                    }
-                    let updated = Instant::now();
-                    self.track_toggle_screens();
-                    // For the "I'm playing" ping: an atomic, sent on when it changes.
-                    horizon_client::heartbeat::set_lan(self.is_published());
-                    self.update_discord_presence();
-                    let steps = self.clock.advance(elapsed);
-                    // The world ticking in the frame: once its ticks took a
-                    // tick's length, the rest are dropped (`FixedStep::tick_fits`).
-                    let in_frame = self.remote.is_none();
-                    let mut spent = Duration::ZERO;
-                    for step in 0..steps {
-                        if in_frame && !self.clock.tick_fits(spent) {
-                            if let Some(warning) = self.clock.drop_ticks(steps - step) {
-                                log::warn!("{warning}");
-                            }
-                            break;
-                        }
-                        let started = Instant::now();
-                        if self.title.is_none() && !self.pause {
-                            let tick = Instant::now();
-                            horizon_client::spans::time("tick", || self.tick())?;
-                            // In single player the tick is the integrated server's.
-                            if self.remote.is_none() {
-                                self.perf.tick(tick.elapsed().as_secs_f32() * 1000.0);
-                                self.debug_charts.log_tick(tick, tick.elapsed());
-                            }
-                            self.tick_ambience();
-                            self.tick_fov();
-                        }
-                        self.tick_win_screen()?;
-                        // Gui.tick runs ChatListener.tick paused or not.
-                        self.tick_chat_queue();
-                        self.tick_music();
-                        self.tick_sound_engine();
-                        self.clock.record(started.elapsed());
-                        spent += started.elapsed();
-                        if let Some(report) = self.clock.take_sprint_report() {
-                            self.sprint_report(&report);
-                        }
-                    }
-                    self.extras_frame(elapsed);
-                    self.extras_retry()?;
                     self.apply_mouse_look();
                     self.pad_look(elapsed.as_secs_f32());
-                    self.advance_flight();
-                    self.tick_world_icon();
-                    let ticked = Instant::now();
+                    let render_start = Instant::now();
                     let rendered = self.render()?;
                     self.apply_cursor_icon();
                     if let Some(threshold) = self.options.spikes
@@ -14608,7 +14632,7 @@ impl ApplicationHandler for Game<'_> {
                                     format!(", cpu {:.1} ms", (end - start).as_secs_f32() * 1000.0)
                                 });
                             log::info!(
-                                "Horizon: slow frame {cpu:.1} ms{worked} ({steps} ticks): {}",
+                                "Horizon: slow frame {cpu:.1} ms{worked}: {}",
                                 horizon_client::spans::describe(&spans)
                             );
                         }
@@ -14625,9 +14649,9 @@ impl ApplicationHandler for Game<'_> {
                             self.frame_stats.record_cpu(ms(cpu));
                             let render = r.last_encode;
                             self.frame_stats.record_phases([
-                                ms(updated - now),
-                                ms(ticked - updated),
-                                ms(ticked.elapsed().saturating_sub(r.last_wait + render)),
+                                ms(render_start - now),
+                                ms(render_start.elapsed()),
+                                ms(render_start.elapsed().saturating_sub(r.last_wait + render)),
                                 ms(render),
                             ]);
                         }
@@ -14635,16 +14659,6 @@ impl ApplicationHandler for Game<'_> {
                         r.gpu_times.clear();
                     }
                     self.limit_frame();
-                    self.pause = self.pauses_game();
-                    if let Some(server) = &self.integrated {
-                        server.set_paused(self.pause);
-                        server.set_distances(
-                            self.settings.render_distance,
-                            self.settings.simulation_distance,
-                            self.settings.entity_distance,
-                        );
-                    }
-                    self.clock.end_frame(self.pause);
                     let mut consumed = false;
                     let finished = self
                         .renderer
@@ -14787,17 +14801,36 @@ impl ApplicationHandler for Game<'_> {
             event_loop.exit();
             return;
         }
+        if self.window.is_some() {
+            if let Err(error) = self.advance_simulation_and_network() {
+                self.error = Some(error);
+                event_loop.exit();
+                return;
+            }
+        }
+        let is_hidden = self.occluded
+            || self
+                .window
+                .as_ref()
+                .is_some_and(|w| w.is_minimized().unwrap_or(false));
         if let Some(w) = &self.window {
             if self.options.offscreen {
                 // Offscreen frames don't wait for the window to be drawn: an
                 // occluded window (a locked macOS session) gets no redraws.
                 let id = w.id();
                 self.window_event(event_loop, id, WindowEvent::RedrawRequested);
-            } else {
+            } else if !is_hidden {
                 w.request_redraw();
             }
         }
-        event_loop.set_control_flow(ControlFlow::Poll);
+        if is_hidden {
+            // When minimized or occluded, yield between simulation ticks (~20 TPS pacing)
+            event_loop.set_control_flow(ControlFlow::WaitUntil(
+                Instant::now() + Duration::from_millis(10),
+            ));
+        } else {
+            event_loop.set_control_flow(ControlFlow::Poll);
+        }
     }
     /// The application is ending. On macOS, Quit (Cmd+Q) ends it through
     /// applicationWillTerminate without a CloseRequested; vanilla's GLFW
@@ -14972,6 +15005,8 @@ impl<'a> Game<'a> {
             started: now,
             spectator_gui: Default::default(),
             previous: now,
+            render_previous: now,
+            occluded: false,
             last_input: now,
             pad: Default::default(),
             frames: 0,
@@ -16778,17 +16813,7 @@ pub fn run() -> Result<()> {
         }
         return Err(error.into());
     }
-    // Someone is playing: the anonymous ping behind the launcher's "N playing now", and the
-    // official server in their list (servers.dat in the game folder, the working directory). Not
-    // for a server, a benchmark, a run that quits by itself, a harness's fixture or a run that
-    // horizon-ctl drives: those start in a source checkout and wrote the list there.
-    if !options.offscreen && !synchronous_startup(&options) {
-        horizon_client::heartbeat::start();
-        if let Err(e) = horizon_client::multiplayer::add_official_server(&std::env::current_dir()?)
-        {
-            log::warn!("could not add the official server to servers.dat: {e}");
-        }
-    }
+
     let early_settings = Settings::load(&std::env::current_dir()?.join("options.txt"));
     // "Playing Horizon" on Discord: never for a server; an automated run only talks to a test's fake Discord.
     if options.dedicated.is_none() {

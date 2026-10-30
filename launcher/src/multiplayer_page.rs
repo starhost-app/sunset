@@ -38,10 +38,14 @@ impl Launcher {
         if self.multiplayer.fresh {
             return;
         }
-        // A list that can't be read is the game's to report: the page shows it empty.
-        let _ = server_list::add_official(&home);
+        // Purge pre-added official server if present so the player's server list is clean
+        let mut list = server_list::List::load(&home);
+        if let Some(pos) = list.servers().iter().position(|s| s.ip == "horizon.bunchy7s.dev" || s.name == "Horizon Official") {
+            let _ = list.remove(pos);
+            let _ = list.save(&home);
+        }
         // A few servers and their 64×64 pictures: small enough to read while drawing.
-        self.multiplayer.list = server_list::List::load(&home)
+        self.multiplayer.list = list
             .servers()
             .into_iter()
             .map(|s| {

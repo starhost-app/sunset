@@ -347,32 +347,7 @@ impl Launcher {
             }
         })
         .detach();
-        // Counts the time the sidebar's partner banner is on screen, until it may be hidden.
-        cx.spawn(async move |this, cx| loop {
-            cx.background_executor()
-                .timer(Duration::from_secs(10))
-                .await;
-            let counting = this.update(cx, |this, cx| {
-                let s = &mut this.settings;
-                if s.partner_hidden || s.partner_seen_secs >= partner::SEEN_BEFORE_HIDE {
-                    return false;
-                }
-                if this.page != Page::Servers {
-                    s.partner_seen_secs += 10;
-                    if s.partner_seen_secs % 60 == 0
-                        || s.partner_seen_secs >= partner::SEEN_BEFORE_HIDE
-                    {
-                        s.save();
-                        cx.notify();
-                    }
-                }
-                true
-            });
-            if !matches!(counting, Ok(true)) {
-                break;
-            }
-        })
-        .detach();
+
         let mut settings = Settings::load();
         i18n::set(settings.language());
         if settings.minecraft_dir.is_none() {
@@ -2067,7 +2042,6 @@ impl Launcher {
             },
         ));
         let items = self.instance_items(heading, cx);
-        let mut rows = items.len();
         let list = div()
             .flex()
             .flex_col()
@@ -2083,8 +2057,6 @@ impl Launcher {
         if !servers.is_empty() {
             list = list.child(heading(tr("SERVERS").into()));
         }
-        rows += servers.len();
-        let headings = 1 + usize::from(!servers.is_empty());
         for e in servers {
             let up = self.servers.is_up(&e.dir);
             let open = self.page == Page::Servers && self.servers.open.as_ref() == Some(&e.dir);
@@ -2181,44 +2153,7 @@ impl Launcher {
             }
             _ => {}
         }
-        // Sculk's card above the links: seen without scrolling, on every page but Servers, which shows
-        // its wide banner. Tall where the sidebar has the height for it besides the wordmark, its rows
-        // (52 high each, under headings of 40) and the links, compact otherwise. After a while on
-        // screen a "Hide" beside its label puts it away for good.
-        if self.page != Page::Servers && !self.settings.partner_hidden {
-            let free = f32::from(window.viewport_size().height)
-                - theme::TOPBAR
-                - 40. * headings as f32
-                - 52. * rows as f32
-                - 110.;
-            let mut side = div().relative().mb(px(8.)).child(partner::card(
-                "partner-side",
-                theme::SIDEBAR - 20.,
-                free < partner::TALL_HEIGHT,
-                &t,
-            ));
-            if self.settings.partner_seen_secs >= partner::SEEN_BEFORE_HIDE {
-                let hide = div()
-                    .id("partner-hide")
-                    .absolute()
-                    .top(px(0.))
-                    .right(px(0.))
-                    .cursor_pointer()
-                    .child(
-                        text(theme::MICRO)
-                            .text_color(t.muted)
-                            .hover(move |s| s.text_color(t.ink))
-                            .child(tr("HIDE")),
-                    )
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                        this.settings.partner_hidden = true;
-                        this.settings.save();
-                        cx.notify();
-                    }));
-                side = side.child(keyboard(hide, &t));
-            }
-            foot = foot.child(side);
-        }
+
         if !self.links.sponsor.is_empty() {
             foot = foot.child(link(
                 "sponsor",
@@ -2267,7 +2202,7 @@ impl Launcher {
                 .child(
                     shell::text(theme::night::TITLE, shell::c(n.ink))
                         .font_family(theme::DISPLAY_FONT)
-                        .child("Horizon"),
+                        .child("SunSet"),
                 )
         });
         shell::sidebar_plate(&t)
@@ -4274,8 +4209,8 @@ fn key_bindings() -> Vec<KeyBinding> {
 fn menus() -> Vec<Menu> {
     vec![
         Menu {
-            name: "Horizon Launcher".into(),
-            items: vec![MenuItem::action("Quit Horizon Launcher", Quit)],
+            name: "SunSet Launcher".into(),
+            items: vec![MenuItem::action("Quit SunSet Launcher", Quit)],
         },
         Menu {
             name: "Window".into(),
@@ -4421,10 +4356,10 @@ mod tests {
     #[test]
     fn the_app_menu_has_quit() {
         let menus = super::menus();
-        assert_eq!(menus[0].name, "Horizon Launcher");
+        assert_eq!(menus[0].name, "SunSet Launcher");
         assert!(matches!(
             &menus[0].items[0],
-            gpui::MenuItem::Action { name, .. } if name == "Quit Horizon Launcher"
+            gpui::MenuItem::Action { name, .. } if name == "Quit SunSet Launcher"
         ));
     }
 

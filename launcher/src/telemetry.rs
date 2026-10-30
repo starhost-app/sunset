@@ -45,26 +45,13 @@ pub const NEVER: &str = "Never sent: your account name or UUID, world names, ser
 pub const PING_NAME: &str = "\"I'm playing\" ping";
 pub const PING: &str = "While you play, the game sends an anonymous \"I'm playing\" ping once a minute, so the launcher can show how many people play Horizon right now. It holds: a random number made when the game starts and forgotten when it closes, the Horizon version, your OS (Linux, macOS or Windows), and whether you have a world open to LAN or friends. It doesn't hold: your account, your install ID, world or server names, or anything you do in the game, and the server doesn't keep your IP address. It is sent whatever the switches say.";
 
-/// How many play Horizon now (rounded), if the server says.
+/// How many play now (telemetry tracking disabled).
 pub fn playing_now() -> Option<u64> {
-    let endpoint = horizon_telemetry::endpoint()?;
-    horizon_telemetry::live::fetch(&endpoint)
-        .ok()
-        .map(|count| count.playing)
+    None
 }
 
-/// Sends [`playing_now`] to the window as `Msg::Playing` now and every minute, on its own
-/// thread. Nothing at all when sending is turned off.
-pub fn watch_playing(tx: std::sync::mpsc::Sender<backend::Msg>) {
-    if horizon_telemetry::endpoint().is_none() {
-        return;
-    }
-    std::thread::spawn(move || {
-        while tx.send(backend::Msg::Playing(playing_now())).is_ok() {
-            std::thread::sleep(horizon_telemetry::live::INTERVAL);
-        }
-    });
-}
+/// Sends [`playing_now`] to the window as `Msg::Playing` (telemetry tracking disabled).
+pub fn watch_playing(_tx: std::sync::mpsc::Sender<backend::Msg>) {}
 
 pub fn home() -> PathBuf {
     backend::game_home()

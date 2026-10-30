@@ -33,15 +33,25 @@ const OTHER_PROFILE: &str =
 const SIGN_IN_AGAIN: &str = "Your Microsoft sign-in expired. Sign in again.";
 /// The Minecraft token is renewed when it has less than this left.
 const RENEW_BEFORE: u64 = 3600;
+const DEFAULT_CLIENT_ID: &str = "c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb";
 
-/// The configured Azure app, if any: the run-time variable wins over the build-time one, and an
-/// empty value means none.
+/// The configured Azure app, if any: the run-time variable wins over the build-time one.
+/// Defaults to a standard Minecraft launcher client ID so no custom Azure registration is needed.
 pub fn client_id() -> Option<String> {
-    std::env::var("HORIZON_MSA_CLIENT_ID")
-        .ok()
-        .or_else(|| option_env!("HORIZON_MSA_CLIENT_ID").map(str::to_owned))
-        .map(|id| id.trim().to_owned())
-        .filter(|id| !id.is_empty())
+    match std::env::var("HORIZON_MSA_CLIENT_ID") {
+        Ok(val) => {
+            let trimmed = val.trim();
+            if trimmed.is_empty() || trimmed == "none" {
+                None
+            } else {
+                Some(trimmed.to_owned())
+            }
+        }
+        Err(_) => option_env!("HORIZON_MSA_CLIENT_ID")
+            .map(|id| id.trim().to_owned())
+            .filter(|id| !id.is_empty())
+            .or_else(|| Some(DEFAULT_CLIENT_ID.to_owned())),
+    }
 }
 
 /// Where the requests go: the real services, or a mock in tests.
@@ -585,6 +595,51 @@ impl SecretStore for MemoryStore {
     }
 }
 
+/// Simple JSON file store: saves tokens in a JSON file without requiring the OS keychain.
+pub struct JsonFileStore {
+    path: PathBuf,
+    entries: Mutex<HashMap<String, String>>,
+}
+
+impl JsonFileStore {
+    pub fn new(path: PathBuf) -> Self {
+        let entries = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+        Self {
+            path,
+            entries: Mutex::new(entries),
+        }
+    }
+
+    fn persist(&self) -> Result<(), String> {
+        if let Some(dir) = self.path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let data = self.entries.lock().unwrap().clone();
+        let text = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+        std::fs::write(&self.path, text + "\n").map_err(|e| e.to_string())
+    }
+}
+
+impl SecretStore for JsonFileStore {
+    fn get(&self, key: &str) -> Result<Option<String>, String> {
+        Ok(self.entries.lock().unwrap().get(key).cloned())
+    }
+    fn set(&self, key: &str, secret: &str) -> Result<(), String> {
+        self.entries.lock().unwrap().insert(key.into(), secret.into());
+        self.persist()
+    }
+    fn delete(&self, key: &str) -> Result<(), String> {
+        self.entries.lock().unwrap().remove(key);
+        self.persist()
+    }
+    fn persistent(&self) -> bool {
+        true
+    }
+}
+
 /// The Secret Service (GNOME Keyring, KWallet) through oo7, as gpui itself uses it.
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub struct SystemStore;
@@ -856,27 +911,12 @@ pub fn store() -> &'static dyn SecretStore {
     static STORE: OnceLock<Box<dyn SecretStore>> = OnceLock::new();
     STORE
         .get_or_init(|| {
-            // Unit tests never reach the player's keychain.
-            #[cfg(all(
-                not(test),
-                any(
-                    target_os = "linux",
-                    target_os = "freebsd",
-                    target_os = "macos",
-                    target_os = "windows"
-                )
-            ))]
-            {
-                let why = match std::env::var_os("HORIZON_NO_KEYCHAIN") {
-                    Some(_) => "HORIZON_NO_KEYCHAIN is set.".to_string(),
-                    None => match SystemStore.get("probe") {
-                        Ok(_) => return Box::new(SystemStore),
-                        Err(e) => e,
-                    },
-                };
-                let _ = NO_KEYCHAIN_WHY.set(why);
+            if cfg!(test) {
+                return Box::new(MemoryStore::default());
             }
-            Box::<MemoryStore>::default()
+            // Simple JSON storage: stores accounts and secrets cleanly in JSON file
+            let path = crate::backend::data_dir().join("accounts_secrets.json");
+            Box::new(JsonFileStore::new(path))
         })
         .as_ref()
 }
@@ -935,10 +975,61 @@ impl Accounts {
         crate::backend::data_dir().join("accounts.json")
     }
     pub fn load() -> Self {
-        std::fs::read_to_string(Self::path())
+        let mut loaded: Self = std::fs::read_to_string(Self::path())
             .ok()
             .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+
+        // If no accounts are loaded, check if auth.json exists from our simple MSA flow
+        if loaded.accounts.is_empty() && !cfg!(test) {
+            let auth_paths = [
+                crate::backend::data_dir().join("auth.json"),
+                PathBuf::from("auth.json"),
+                PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("horizon/auth.json"),
+            ];
+            for auth_path in &auth_paths {
+                if let Ok(text) = std::fs::read_to_string(auth_path) {
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+                        let name = val.get("username").and_then(|u| u.as_str());
+                        let uuid = val.get("uuid").and_then(|u| u.as_str());
+                        let mc_token = val.get("minecraft_access_token").and_then(|t| t.as_str());
+                        let refresh = val
+                            .get("microsoft_refresh_token")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or_default();
+                        let exp = val
+                            .get("minecraft_expires_at")
+                            .and_then(|e| e.as_u64())
+                            .unwrap_or(0);
+                        let owns = val
+                            .get("owns_minecraft")
+                            .and_then(|o| o.as_bool())
+                            .unwrap_or(true);
+
+                        if let (Some(name), Some(uuid), Some(mc_token)) = (name, uuid, mc_token) {
+                            let account = Account {
+                                uuid: uuid.replace('-', "").to_lowercase(),
+                                name: name.to_string(),
+                                skin: None,
+                                cape: None,
+                            };
+                            let secrets = Secrets {
+                                refresh_token: refresh.to_string(),
+                                minecraft_token: mc_token.to_string(),
+                                minecraft_expires_at: exp,
+                                xuid: None,
+                                owns,
+                            };
+                            let _ = loaded.add(store(), account, &secrets);
+                            let _ = loaded.save();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        loaded
     }
     pub fn save(&self) -> Result<(), String> {
         let path = Self::path();
