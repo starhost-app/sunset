@@ -331,7 +331,7 @@ impl ChunkBatchSizeCalculator {
     pub(super) fn desired_chunks_per_tick(&self) -> f32 {
         let desired = (7_000_000.0 / self.aggregated_nanos_per_chunk) as f32;
         if desired.is_finite() && desired > 0.0 {
-            desired
+            desired.clamp(0.01, 20.0)
         } else {
             3.5
         }
