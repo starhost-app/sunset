@@ -31,7 +31,7 @@ const fn version_or(injected: Option<&'static str>) -> &'static str {
 }
 
 /// The current SunSet version name based on fixes made to the fork.
-pub const SUNSET_VERSION: &str = "v1.0.8";
+pub const SUNSET_VERSION: &str = "v1.0.9";
 
 /// Display format for versions: converts nightly hashes into clean version format (e.g. v1.0.8, v2026.10.30)
 pub fn display_version(tag: &str) -> String {
@@ -85,11 +85,11 @@ pub const ASSET: Option<&str> = Some("horizon-windows-x64.zip");
 pub const ASSET: Option<&str> = None;
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-pub const LAUNCHER_ASSET: Option<&str> = Some("horizon-launcher-linux-x86_64.tar.gz");
+pub const LAUNCHER_ASSET: Option<&str> = Some("sunset-launcher-linux-x86_64");
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-pub const LAUNCHER_ASSET: Option<&str> = Some("horizon-launcher-macos-arm64.zip");
+pub const LAUNCHER_ASSET: Option<&str> = Some("sunset-launcher-macos-arm64");
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-pub const LAUNCHER_ASSET: Option<&str> = Some("horizon-launcher-windows-x64.zip");
+pub const LAUNCHER_ASSET: Option<&str> = Some("sunset-launcher-windows-x64.exe");
 #[cfg(not(any(
     all(target_os = "linux", target_arch = "x86_64"),
     all(target_os = "macos", target_arch = "aarch64"),
@@ -98,9 +98,9 @@ pub const LAUNCHER_ASSET: Option<&str> = Some("horizon-launcher-windows-x64.zip"
 pub const LAUNCHER_ASSET: Option<&str> = None;
 
 const LAUNCHER_BINARY: &str = if cfg!(windows) {
-    "horizon-launcher.exe"
+    "sunset-launcher.exe"
 } else {
-    "horizon-launcher"
+    "sunset-launcher"
 };
 
 pub(crate) const CLIENT: &str = if cfg!(windows) {
@@ -149,10 +149,7 @@ pub fn launcher_version(tag: &str) -> Option<&str> {
         .or_else(|| tag.strip_prefix(OLD_LAUNCHER_TAG_PREFIX))
         .or_else(|| tag.strip_prefix("sunset-v"))
         .or_else(|| tag.strip_prefix("sunset@"))
-        .or_else(|| {
-            tag.strip_prefix('v')
-                .filter(|v| v.starts_with("1."))
-        })
+        .or_else(|| tag.strip_prefix('v').filter(|v| v.starts_with("1.")))
         .filter(|v| v.starts_with(|c: char| c.is_ascii_digit()))
 }
 
@@ -313,12 +310,23 @@ pub(crate) fn parse_releases(
         let found = r["assets"].as_array().into_iter().flatten().find_map(|a| {
             let name = a["name"].as_str()?;
             let matches = Some(name) == asset
-                || (asset == Some("horizon-linux-x86_64.tar.gz") && name == "sunset-linux-x86_64.tar.gz")
+                || (asset == Some("horizon-linux-x86_64.tar.gz")
+                    && name == "sunset-linux-x86_64.tar.gz")
                 || (asset == Some("horizon-windows-x64.zip") && name == "sunset-windows-x64.zip")
+                || (asset == Some("sunset-launcher-linux-x86_64")
+                    && (name == "sunset-launcher-linux-x86_64"
+                        || name == "sunset-launcher-linux-x86_64.tar.gz"
+                        || name == "horizon-launcher-linux-x86_64.tar.gz"))
+                || (asset == Some("sunset-launcher-windows-x64.exe")
+                    && (name == "sunset-launcher-windows-x64.exe"
+                        || name == "sunset-launcher-windows-x64.zip"
+                        || name == "horizon-launcher-windows-x64.zip"))
                 || (asset == Some("horizon-launcher-linux-x86_64.tar.gz")
-                    && (name == "sunset-launcher-linux-x86_64.tar.gz" || name == "sunset-launcher-linux-x86_64"))
+                    && (name == "sunset-launcher-linux-x86_64.tar.gz"
+                        || name == "sunset-launcher-linux-x86_64"))
                 || (asset == Some("horizon-launcher-windows-x64.zip")
-                    && (name == "sunset-launcher-windows-x64.zip" || name == "sunset-launcher-windows-x64.exe"));
+                    && (name == "sunset-launcher-windows-x64.zip"
+                        || name == "sunset-launcher-windows-x64.exe"));
             matches.then(|| {
                 Some((
                     a["browser_download_url"].as_str()?.to_string(),
@@ -646,15 +654,30 @@ pub(crate) fn download(
 }
 
 fn unpack(archive: &Path, url: &str, to: &Path) -> Result<(), String> {
+    fs::create_dir_all(to).map_err(|e| e.to_string())?;
     let file = fs::File::open(archive).map_err(|e| e.to_string())?;
     if url.ends_with(".tar.gz") {
         tar::Archive::new(flate2::read::GzDecoder::new(file))
             .unpack(to)
             .map_err(|e| e.to_string())
-    } else {
+    } else if url.ends_with(".zip") {
         zip::ZipArchive::new(file)
             .and_then(|mut z| z.extract(to))
             .map_err(|e| e.to_string())
+    } else {
+        let binary_name = if cfg!(windows) {
+            "sunset-launcher.exe"
+        } else {
+            "sunset-launcher"
+        };
+        let target = to.join(binary_name);
+        fs::copy(archive, &target).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o755));
+        }
+        Ok(())
     }
 }
 
@@ -677,14 +700,19 @@ pub fn install(release: &Release, progress: impl Fn(f32)) -> Result<(), String> 
         Ok(hash) => hash,
         Err(_e) => {
             let sums_url = release.asset.as_ref().and_then(|(url, _)| {
-                url.rsplit_once('/').map(|(base, _)| format!("{base}/SHA256SUMS"))
+                url.rsplit_once('/')
+                    .map(|(base, _)| format!("{base}/SHA256SUMS"))
             });
             let sums = sums_url.and_then(|u| fetch_small(&u).ok().flatten());
             if let Some(bytes) = sums {
                 if let Ok(text) = std::str::from_utf8(&bytes) {
                     if let Ok(parsed) = horizon_release_sign::parse_sums(text) {
                         let asset = ASSET.unwrap_or_default();
-                        parsed.into_iter().find(|(n, _)| n == asset).map(|(_, hex)| hex).unwrap_or_default()
+                        parsed
+                            .into_iter()
+                            .find(|(n, _)| n == asset)
+                            .map(|(_, hex)| hex)
+                            .unwrap_or_default()
                     } else {
                         String::new()
                     }
@@ -732,7 +760,11 @@ pub(crate) fn install_as(
     let client_file = if top.join(CLIENT).exists() {
         top.join(CLIENT)
     } else {
-        let horizon_name = if cfg!(windows) { "horizon-client.exe" } else { "horizon-client" };
+        let horizon_name = if cfg!(windows) {
+            "horizon-client.exe"
+        } else {
+            "horizon-client"
+        };
         if top.join(horizon_name).exists() {
             #[cfg(unix)]
             let _ = std::os::unix::fs::symlink(horizon_name, top.join(CLIENT));
@@ -747,7 +779,11 @@ pub(crate) fn install_as(
     {
         use std::os::unix::fs::PermissionsExt;
         let _ = fs::set_permissions(&client_file, fs::Permissions::from_mode(0o755));
-        let horizon_bin = top.join(if cfg!(windows) { "horizon-client.exe" } else { "horizon-client" });
+        let horizon_bin = top.join(if cfg!(windows) {
+            "horizon-client.exe"
+        } else {
+            "horizon-client"
+        });
         if horizon_bin.exists() {
             let _ = fs::set_permissions(&horizon_bin, fs::Permissions::from_mode(0o755));
         }
@@ -1781,7 +1817,10 @@ pub fn preparer(
             .join(&pins.version)
             .join(format!("{}.jar", pins.version));
         if !client_jar.exists() {
-            log(format!("Downloading Minecraft {} from Mojang servers...", pins.version));
+            log(format!(
+                "Downloading Minecraft {} from Mojang servers...",
+                pins.version
+            ));
             download_for_owner(&pins, &own, &fetch, log)
                 .map_err(|e| format!("Downloading from Mojang servers failed: {e}"))?;
         }
@@ -2198,7 +2237,11 @@ fn client_program(tag: &str) -> PathBuf {
     if sunset.symlink_metadata().is_ok() {
         let _ = fs::remove_file(&sunset);
     }
-    let horizon_name = if cfg!(windows) { "horizon-client.exe" } else { "horizon-client" };
+    let horizon_name = if cfg!(windows) {
+        "horizon-client.exe"
+    } else {
+        "horizon-client"
+    };
     let horizon = dir.join(horizon_name);
     if horizon.exists() {
         #[cfg(unix)]
@@ -3224,7 +3267,11 @@ impl Settings {
         }) {
             settings.minecraft_dir = Some(sunset);
         }
-        if settings.selected.as_ref().map_or(true, |s| s.starts_with("nightly")) {
+        if settings
+            .selected
+            .as_ref()
+            .map_or(true, |s| s.starts_with("nightly"))
+        {
             settings.selected = Some(SUNSET_VERSION.to_string());
         }
         settings.ping_notice_seen = true;

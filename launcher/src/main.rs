@@ -357,7 +357,11 @@ impl Launcher {
             settings.minecraft_dir = Some(backend::sunset_dir());
             settings.save();
         }
-        if settings.selected.as_ref().map_or(true, |s| s.starts_with("nightly")) {
+        if settings
+            .selected
+            .as_ref()
+            .map_or(true, |s| s.starts_with("nightly"))
+        {
             settings.selected = Some(backend::SUNSET_VERSION.to_string());
             settings.save();
         }
@@ -2043,8 +2047,16 @@ impl Launcher {
             .flex()
             .items_center()
             .gap(px(20.))
-            .child(link("link-discord", "Discord", "https://discord.gg/HcTeMZxe5E"))
-            .child(link("link-website", "Website", "https://github.com/starhost-app/sunset"));
+            .child(link(
+                "link-discord",
+                "Discord",
+                "https://discord.gg/HcTeMZxe5E",
+            ))
+            .child(link(
+                "link-website",
+                "Website",
+                "https://github.com/starhost-app/sunset",
+            ));
         div()
             .flex()
             .flex_none()
@@ -2251,7 +2263,11 @@ impl Launcher {
     fn account_selector(&self, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
         let (name, _how) = self.who_plays();
-        let label = if name.is_empty() { "Offline".to_string() } else { name };
+        let label = if name.is_empty() {
+            "Offline".to_string()
+        } else {
+            name
+        };
         let mut wrap = div().relative().child(
             div()
                 .id("account-selector")
@@ -2272,11 +2288,7 @@ impl Launcher {
                         .items_center()
                         .gap(px(6.))
                         .child(blocks::icon("user", 14., t.muted))
-                        .child(
-                            div()
-                                .font_weight(FontWeight::MEDIUM)
-                                .child(label),
-                        ),
+                        .child(div().font_weight(FontWeight::MEDIUM).child(label)),
                 )
                 .child(div().text_color(t.muted).text_size(px(10.)).child("▾"))
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
@@ -2421,7 +2433,6 @@ impl Launcher {
         // A Java instance plays Mojang's game: no Horizon version, nothing of Horizon's to prepare.
         let java = self.selected_instance().and_then(|i| i.java.clone());
 
-
         let avail_h = (window_height - 144.).max(400.);
         let Some(tag) = self
             .selected()
@@ -2448,14 +2459,15 @@ impl Launcher {
                             "Start the game, or run a server for others to join.",
                             &t,
                         ))
-                        .child(centered(tr("No version installed yet."), &t).child(
-                            button("go-versions", "Choose a version", Kind::Secondary, &t).on_click(
-                                cx.listener(|this, _: &ClickEvent, _, cx| {
-                                    this.go(Page::Versions);
-                                    cx.notify();
-                                }),
+                        .child(
+                            centered(tr("No version installed yet."), &t).child(
+                                button("go-versions", "Choose a version", Kind::Secondary, &t)
+                                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                                        this.go(Page::Versions);
+                                        cx.notify();
+                                    })),
                             ),
-                        )),
+                        ),
                 )
                 .child(self.watermark(window_width));
         };
@@ -2507,21 +2519,15 @@ impl Launcher {
                 cx.notify();
             }));
         }
-        let actions = div()
-            .flex()
-            .items_center()
-            .justify_end()
-            .w_full()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(self.account_selector(cx))
-                    .child(self.picker(cx))
-                    .child(play),
-            );
-
+        let actions = div().flex().items_center().justify_end().w_full().child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(self.account_selector(cx))
+                .child(self.picker(cx))
+                .child(play),
+        );
 
         let mut top_content = div()
             .flex()
@@ -2555,7 +2561,6 @@ impl Launcher {
         if let Some(crash) = self.crash.clone() {
             top_content = top_content.child(self.crash_notice(crash, cx));
         }
-
 
         let avail_h = (window_height - 144.).max(400.);
         div()
@@ -3431,11 +3436,7 @@ impl Launcher {
                 .filter(|_| self.installed.contains(tag))
                 .map(|(_, n)| *n)
         };
-        let page = div()
-            .flex()
-            .flex_col()
-            .gap(px(24.))
-            .child(header);
+        let page = div().flex().flex_col().gap(px(24.)).child(header);
         let mut releases_vec = match &self.releases {
             Load::Ready(r) => r.clone(),
             _ => Vec::new(),
@@ -3457,14 +3458,16 @@ impl Launcher {
             match &self.releases {
                 Load::Loading => return page.child(centered("Loading releases…", &t)),
                 Load::Failed(e) => {
-                    return page.child(centered(&format!("Couldn't load releases. {e}"), &t).child(
-                        button("retry", "Try again", Kind::Secondary, &t).on_click(cx.listener(
-                            |this, _: &ClickEvent, _, cx| {
-                                this.fetch_releases();
-                                cx.notify();
-                            },
-                        )),
-                    ));
+                    return page.child(
+                        centered(&format!("Couldn't load releases. {e}"), &t).child(
+                            button("retry", "Try again", Kind::Secondary, &t).on_click(
+                                cx.listener(|this, _: &ClickEvent, _, cx| {
+                                    this.fetch_releases();
+                                    cx.notify();
+                                }),
+                            ),
+                        ),
+                    );
                 }
                 _ => return page.child(centered("No releases yet.", &t)),
             }
@@ -3940,7 +3943,9 @@ impl Render for Launcher {
                                             .flex_col()
                                             .w_full()
                                             .min_w_0()
-                                            .when(self.page == Page::Play, |d| d.min_h_full().flex_1())
+                                            .when(self.page == Page::Play, |d| {
+                                                d.min_h_full().flex_1()
+                                            })
                                             .px(px(theme::GUTTER))
                                             .pt(px(24.))
                                             .when(self.page != Page::Play, |d| d.pb(px(48.)))
@@ -3949,7 +3954,9 @@ impl Render for Launcher {
                                                     .flex()
                                                     .flex_col()
                                                     .w_full()
-                                                    .when(self.page == Page::Play, |d| d.min_h_full().flex_1())
+                                                    .when(self.page == Page::Play, |d| {
+                                                        d.min_h_full().flex_1()
+                                                    })
                                                     .child(content),
                                             ),
                                     ),

@@ -74,16 +74,10 @@ jobs:
           - name: linux-x86_64
             os: ubuntu-22.04
             binary: sunset-launcher
-            legacy_binary: horizon-launcher
-            archive: sunset-launcher-linux-x86_64.tar.gz
-            legacy_archive: horizon-launcher-linux-x86_64.tar.gz
             standalone: sunset-launcher-linux-x86_64
           - name: windows-x64
             os: windows-latest
             binary: sunset-launcher.exe
-            legacy_binary: horizon-launcher.exe
-            archive: sunset-launcher-windows-x64.zip
-            legacy_archive: horizon-launcher-windows-x64.zip
             standalone: sunset-launcher-windows-x64.exe
             rustflags: -C target-feature=+crt-static
     defaults:
@@ -114,24 +108,8 @@ jobs:
 
       - name: Package artifacts
         run: |
-          mkdir -p dist out
-          cp target/release/${{ matrix.binary }} dist/${{ matrix.binary }}
-          if [ -f target/release/${{ matrix.legacy_binary }} ]; then
-            cp target/release/${{ matrix.legacy_binary }} dist/${{ matrix.legacy_binary }}
-          fi
+          mkdir -p out
           cp target/release/${{ matrix.binary }} out/${{ matrix.standalone }}
-
-          if [[ "${{ matrix.archive }}" == *.tar.gz ]]; then
-            (cd dist && tar -czf ../out/${{ matrix.archive }} *)
-            cp out/${{ matrix.archive }} out/${{ matrix.legacy_archive }}
-          else
-            if command -v 7z &> /dev/null; then
-              (cd dist && 7z a ../out/${{ matrix.archive }} *)
-            else
-              (cd dist && zip -r ../out/${{ matrix.archive }} *)
-            fi
-            cp out/${{ matrix.archive }} out/${{ matrix.legacy_archive }}
-          fi
           ls -la out/
 
       - uses: actions/upload-artifact@v4
@@ -193,12 +171,8 @@ jobs:
             notes = f'''## SunSet Launcher v{version}
 
             ### Downloads
-            - **Windows (x64)**:
-              - Standalone EXE: [sunset-launcher-windows-x64.exe](https://github.com/{repo}/releases/download/{tag}/sunset-launcher-windows-x64.exe)
-              - Zip Package: [sunset-launcher-windows-x64.zip](https://github.com/{repo}/releases/download/{tag}/sunset-launcher-windows-x64.zip)
-            - **Linux (x86_64)**:
-              - Standalone Binary: [sunset-launcher-linux-x86_64](https://github.com/{repo}/releases/download/{tag}/sunset-launcher-linux-x86_64)
-              - Tarball: [sunset-launcher-linux-x86_64.tar.gz](https://github.com/{repo}/releases/download/{tag}/sunset-launcher-linux-x86_64.tar.gz)
+            - **Windows (x64)**: [sunset-launcher-windows-x64.exe](https://github.com/{repo}/releases/download/{tag}/sunset-launcher-windows-x64.exe)
+            - **Linux (x86_64)**: [sunset-launcher-linux-x86_64](https://github.com/{repo}/releases/download/{tag}/sunset-launcher-linux-x86_64)
 
             *Checksums are verified in SHA256SUMS.*'''
             with open('notes.md', 'w') as f:

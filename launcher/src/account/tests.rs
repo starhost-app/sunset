@@ -904,11 +904,17 @@ fn json_file_store_persists_tokens_in_json_file() {
     assert_eq!(store.get("key1").unwrap(), None);
 
     store.set("key1", "secret_token_123").unwrap();
-    assert_eq!(store.get("key1").unwrap().as_deref(), Some("secret_token_123"));
+    assert_eq!(
+        store.get("key1").unwrap().as_deref(),
+        Some("secret_token_123")
+    );
 
     // Reload from file to ensure it was written to disk as valid JSON
     let reloaded = JsonFileStore::new(file.clone());
-    assert_eq!(reloaded.get("key1").unwrap().as_deref(), Some("secret_token_123"));
+    assert_eq!(
+        reloaded.get("key1").unwrap().as_deref(),
+        Some("secret_token_123")
+    );
 
     // Check JSON content
     let raw = std::fs::read_to_string(&file).unwrap();

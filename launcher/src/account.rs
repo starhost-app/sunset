@@ -628,7 +628,10 @@ impl SecretStore for JsonFileStore {
         Ok(self.entries.lock().unwrap().get(key).cloned())
     }
     fn set(&self, key: &str, secret: &str) -> Result<(), String> {
-        self.entries.lock().unwrap().insert(key.into(), secret.into());
+        self.entries
+            .lock()
+            .unwrap()
+            .insert(key.into(), secret.into());
         self.persist()
     }
     fn delete(&self, key: &str) -> Result<(), String> {

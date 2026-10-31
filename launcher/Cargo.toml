@@ -1,20 +1,17 @@
 [package]
-name = "horizon-launcher"
-version = "1.0.8"
+name = "sunset-launcher"
+version = "1.0.9"
 edition = "2021"
 license = "MIT"
-description = "Downloads, prepares and starts Horizon builds"
+description = "Downloads, prepares and starts SunSet builds"
 default-run = "sunset-launcher"
 
 [[bin]]
 name = "sunset-launcher"
 path = "src/main.rs"
 
-[[bin]]
-name = "horizon-launcher"
-path = "src/main.rs"
-
 [lib]
+name = "horizon_launcher"
 path = "src/lib.rs"
 
 [workspace]

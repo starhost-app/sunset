@@ -40,7 +40,11 @@ impl Launcher {
         }
         // Purge pre-added official server if present so the player's server list is clean
         let mut list = server_list::List::load(&home);
-        if let Some(pos) = list.servers().iter().position(|s| s.ip == "horizon.bunchy7s.dev" || s.name == "Horizon Official") {
+        if let Some(pos) = list
+            .servers()
+            .iter()
+            .position(|s| s.ip == "horizon.bunchy7s.dev" || s.name == "Horizon Official")
+        {
             let _ = list.remove(pos);
             let _ = list.save(&home);
         }

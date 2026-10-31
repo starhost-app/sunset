@@ -9,10 +9,10 @@ use horizon_theme as tokens;
 use std::time::Duration;
 
 pub use tokens::night::{self, Night};
+#[allow(unused_imports)]
 pub use tokens::{
-    Step, BODY, CAPTION, DISPLAY, HEADING, LABEL, MICRO, TITLE, UI, WORDMARK,
-    CONTROL, CONTROL_LARGE, DISABLED, FIELD, GUTTER, PRESSED, RADIUS,
-    RADIUS_PILL, RADIUS_PLATE, RISE, ROW, SEGMENT,
+    Step, BODY, CAPTION, CONTROL, CONTROL_LARGE, DISABLED, DISPLAY, FIELD, GUTTER, HEADING, LABEL,
+    MICRO, PRESSED, RADIUS, RADIUS_PILL, RADIUS_PLATE, RISE, ROW, SEGMENT, TITLE, UI, WORDMARK,
 };
 pub const FONT: &str = tokens::FONT;
 pub const DISPLAY_FONT: &str = tokens::FONT;
