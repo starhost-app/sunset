@@ -14801,6 +14801,7 @@ impl ApplicationHandler for Game<'_> {
             event_loop.exit();
             return;
         }
+        #[allow(clippy::collapsible_if)]
         if self.window.is_some() {
             if let Err(error) = self.advance_simulation_and_network() {
                 self.error = Some(error);

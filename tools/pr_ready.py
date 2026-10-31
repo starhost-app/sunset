@@ -272,7 +272,7 @@ def parity_summary(output):
 # CI's verify job (.github/workflows/ci.yml): clippy over the whole workspace, and over the server build (the game
 # without sound or controllers).
 CI_CLIPPY = "cargo clippy --workspace --all-targets --locked -- -D warnings"
-CI_CLIPPY_SERVER = "cargo clippy -p horizon-client --all-targets --locked --no-default-features -- -D warnings"
+CI_CLIPPY_SERVER = "cargo clippy -p sunset-client --all-targets --locked --no-default-features -- -D warnings"
 
 
 def mod_features(crates):
@@ -303,7 +303,7 @@ def plan(args, base, changed, crates_of, libraries, dependencies):
     # the touched crates and their dependents did (14-32 s against 14-17 s on the Mac mini, 2026-10-26).
     clippy_crates = dependent_crates(crates, dependencies)
     clippy = CI_CLIPPY
-    if clippy_crates is None or "horizon-client" in clippy_crates:
+    if clippy_crates is None or "sunset-client" in clippy_crates or "horizon-client" in clippy_crates:
         clippy += f" && {CI_CLIPPY_SERVER}"
     test_skip = None if crates is None or crates else "no crate touched"
     doc_crates = sorted(libraries if crates is None else libraries.intersection(crates))

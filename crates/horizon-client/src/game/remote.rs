@@ -1395,10 +1395,10 @@ impl Game<'_> {
                 return;
             }
             let now = Instant::now();
-            if let Some(last) = r.last_batch_ack_time {
-                if now.duration_since(last) < Duration::from_millis(25) {
-                    return;
-                }
+            if r.last_batch_ack_time
+                .is_some_and(|last| now.duration_since(last) < Duration::from_millis(25))
+            {
+                return;
             }
             r.last_batch_ack_time = Some(now);
             r.pending_batch_acks -= 1;
