@@ -280,6 +280,62 @@ pub(super) struct Remote {
     /// `ClientPacketListener.getDebugQueryHandler`: the F3+I query waiting
     /// for the server's data.
     pub(super) debug_query: super::debug_keys::DebugQuery,
+    /// `ClientPacketListener.chunkBatchSizeCalculator`: calculates desired chunks per tick
+    /// based on how long batches take to arrive.
+    batch_calculator: ChunkBatchSizeCalculator,
+}
+
+/// ChunkBatchSizeCalculator: the chunks per tick a vanilla client asks for,
+/// from how long its batches take to arrive (ClientPacketListener.chunkBatchSizeCalculator).
+#[derive(Debug, Clone)]
+pub(super) struct ChunkBatchSizeCalculator {
+    aggregated_nanos_per_chunk: f64,
+    old_samples_weight: i32,
+    chunk_batch_start_time: Instant,
+}
+
+impl Default for ChunkBatchSizeCalculator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ChunkBatchSizeCalculator {
+    pub(super) fn new() -> Self {
+        Self {
+            aggregated_nanos_per_chunk: 2_000_000.0,
+            old_samples_weight: 1,
+            chunk_batch_start_time: Instant::now(),
+        }
+    }
+
+    pub(super) fn on_batch_start(&mut self) {
+        self.chunk_batch_start_time = Instant::now();
+    }
+
+    pub(super) fn on_batch_finished(&mut self, batch_size: i32) {
+        if batch_size > 0 {
+            let elapsed = self.chunk_batch_start_time.elapsed().as_nanos() as f64;
+            let per_chunk = elapsed / f64::from(batch_size);
+            let clamped = per_chunk.clamp(
+                self.aggregated_nanos_per_chunk / 3.0,
+                self.aggregated_nanos_per_chunk * 3.0,
+            );
+            let weight = f64::from(self.old_samples_weight);
+            self.aggregated_nanos_per_chunk =
+                (self.aggregated_nanos_per_chunk * weight + clamped) / (weight + 1.0);
+            self.old_samples_weight = (self.old_samples_weight + 1).min(49);
+        }
+    }
+
+    pub(super) fn desired_chunks_per_tick(&self) -> f32 {
+        let desired = (7_000_000.0 / self.aggregated_nanos_per_chunk) as f32;
+        if desired.is_finite() && desired > 0.0 {
+            desired
+        } else {
+            3.5
+        }
+    }
 }
 
 /// The time a frame spends on chunk packets before it leaves the rest of
@@ -589,6 +645,7 @@ impl Game<'_> {
             backlog_since: None,
             server_links: Vec::new(),
             debug_query: Default::default(),
+            batch_calculator: ChunkBatchSizeCalculator::new(),
             transfer: None,
         });
         // The level's TickRateManager follows the server's ticking packets.
@@ -740,6 +797,7 @@ impl Game<'_> {
             r.synced = vec![None; CREATIVE_SYNCED];
             r.menu = None;
             r.destroying = None;
+            r.batch_calculator = ChunkBatchSizeCalculator::new();
             r.status = horizon_client::lang::get_or(
                 "multiplayer.downloadingTerrain",
                 "Loading terrain...",
@@ -2274,10 +2332,20 @@ impl Game<'_> {
                     renderer.remove_columns([(x, z)]);
                 }
             }
-            C::ChunkBatchFinished(_) => {
-                // ChunkBatchSizeCalculator's ceiling; meshing runs on workers.
+            C::ChunkBatchStart(_) => {
+                if let Some(r) = self.remote.as_mut() {
+                    r.batch_calculator.on_batch_start();
+                }
+            }
+            C::ChunkBatchFinished(p) => {
+                let desired = if let Some(r) = self.remote.as_mut() {
+                    r.batch_calculator.on_batch_finished(p.size);
+                    r.batch_calculator.desired_chunks_per_tick()
+                } else {
+                    3.5
+                };
                 self.send(S::ChunkBatchReceived(play::ChunkBatchReceived {
-                    chunks_per_tick: 64.0,
+                    chunks_per_tick: desired,
                 }));
             }
             C::BlockUpdate(p) => self.server_block(p.pos, p.state),
@@ -7917,6 +7985,23 @@ fn snapshot_value(s: &play::AttributeSnapshot) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn chunk_batch_calculator_parity() {
+        let mut calc = super::ChunkBatchSizeCalculator::new();
+        // Initial desired rate is 7_000_000 / 2_000_000 = 3.5 chunks/tick.
+        assert!((calc.desired_chunks_per_tick() - 3.5).abs() < 1e-4);
+
+        // Size 0 does not update nanos.
+        calc.on_batch_finished(0);
+        assert!((calc.desired_chunks_per_tick() - 3.5).abs() < 1e-4);
+
+        // Batch finished with positive size updates desired rate reasonably.
+        calc.on_batch_start();
+        calc.on_batch_finished(10);
+        let desired = calc.desired_chunks_per_tick();
+        assert!(desired.is_finite());
+        assert!(desired > 0.0);
+    }
     /// An NPC plugin lists the NPC, spawns it, and takes the entry off the list:
     /// the entity keeps the skin it found; a player spawned before its entry
     /// arrives takes the entry once it comes.
