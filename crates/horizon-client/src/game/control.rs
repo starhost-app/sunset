@@ -525,8 +525,8 @@ impl Game<'_> {
             }
             "lod-distance" => {
                 let n: u32 = arg(1)?.parse()?;
-                if n > 1024 {
-                    return Err("LOD distance must be 0..1024".into());
+                if n > 2048 {
+                    return Err("LOD distance must be 0..2048".into());
                 }
                 self.settings.horizon.lod_distance = n;
                 self.apply_settings();

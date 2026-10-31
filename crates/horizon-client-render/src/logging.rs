@@ -65,6 +65,12 @@ pub fn game_home() -> PathBuf {
     {
         return PathBuf::from(h);
     }
+    if let Ok(home) = std::env::var("HOME") {
+        let sunset = PathBuf::from(home).join(".sunset");
+        if sunset.exists() {
+            return sunset;
+        }
+    }
     let base = data_dir();
     let sunset = base.join("sunset");
     let horizon = base.join("horizon");

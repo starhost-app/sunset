@@ -747,6 +747,24 @@ pub(crate) fn install_as(
     let _ = fs::remove_dir_all(&partial);
     reuse_prepared(&root, tag);
     complete_assets(tag);
+    if !is_prepared(tag) {
+        progress(0.98);
+        let own = data_dir().join("minecraft");
+        let log = |line: String| {
+            eprintln!("[install/prepare] {line}");
+        };
+        if let Ok((prep, mc)) = preparer(tag, &own, MinecraftFrom::Install, &log) {
+            match prep {
+                Preparer::Process(mut cmd) => {
+                    let _ = cmd.status();
+                }
+                Preparer::InProcess(options) => {
+                    let _ = prepare_in_process(&options, &log);
+                }
+            }
+            sounds(tag, &mc, &log);
+        }
+    }
     progress(1.0);
     Ok(())
 }
@@ -2131,7 +2149,15 @@ pub fn client_command(tag: &str) -> Command {
     let home = game_home();
     let _ = fs::create_dir_all(&home);
     let mut cmd = Command::new(client_program(tag));
-    cmd.current_dir(home).arg("--resources").arg(resources(tag));
+    cmd.current_dir(&home)
+        .arg("--resources")
+        .arg(resources(tag))
+        .arg("--home")
+        .arg(&home)
+        .arg("--game-dir")
+        .arg(&home)
+        .env("SUNSET_HOME", &home)
+        .env("HORIZON_HOME", &home);
     // PipeWire remembers volume and mute per application name. The game's own name is
     // "PipeWire ALSA [horizon-client]", shared with development and test runs, where
     // muting it once left every later game silent: played from here it is "Horizon".
@@ -2178,6 +2204,12 @@ pub fn server_command(tag: &str, folder: &Path) -> Command {
     cmd.current_dir(folder)
         .arg("--resources")
         .arg(resources(tag))
+        .arg("--home")
+        .arg(folder)
+        .arg("--game-dir")
+        .arg(folder)
+        .env("SUNSET_HOME", folder)
+        .env("HORIZON_HOME", folder)
         .args(["--dedicated", "--nogui"]);
     cmd
 }

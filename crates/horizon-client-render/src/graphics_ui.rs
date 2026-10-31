@@ -508,7 +508,7 @@ impl H {
         let g = &mut s.horizon;
         match self {
             H::LodDistance => {
-                g.lod_distance = step(&[0, 64, 128, 256, 512, 1024], g.lod_distance, back)
+                g.lod_distance = step(&[0, 64, 128, 256, 512, 1024, 2048], g.lod_distance, back)
             }
             H::FarDetail => {
                 g.far_detail = step(&[FarDetail::Full, FarDetail::Reduced], g.far_detail, back)
@@ -1248,14 +1248,14 @@ mod tests {
                 .unwrap();
             assert_eq!(items[render + 1], item);
         }
-        for distance in [64, 128, 256, 512, 1024, 0] {
+        for distance in [64, 128, 256, 512, 1024, 2048, 0] {
             item.cycle(&mut s, false, [854, 480]);
             assert_eq!(s.horizon.lod_distance, distance);
             assert_eq!(s.render_distance, near);
         }
         item.cycle(&mut s, true, [854, 480]);
-        assert_eq!(s.horizon.lod_distance, 1024);
-        assert_eq!(item.label(&s).plain(), "LOD Distance: 1024 chunks");
+        assert_eq!(s.horizon.lod_distance, 2048);
+        assert_eq!(item.label(&s).plain(), "LOD Distance: 2048 chunks");
         assert_eq!(
             Item::Vanilla(Opt::RenderDistance).label(&s).plain(),
             format!("Full Detail Distance: {near} chunks")

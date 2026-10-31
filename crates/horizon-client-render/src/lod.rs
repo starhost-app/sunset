@@ -39,8 +39,8 @@ fn sampling_threads(cores: usize) -> usize {
 /// terrain starts one sample job at most this often and no detail: it would
 /// otherwise take the cores the near chunks and the frame need.
 const HELD_SAMPLE_STEP: std::time::Duration = std::time::Duration::from_millis(500);
-/// The coarsest tile level: `Plan` roots cover at most 1024 chunks around.
-const MAX_LEVEL: u8 = 10;
+/// The coarsest tile level: `Plan` roots cover at most 4096 chunks around.
+const MAX_LEVEL: u8 = 12;
 /// Top solid face and optional fluid face, in absolute block coordinates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Surface {
@@ -424,9 +424,9 @@ impl Plan {
         elevation: i32,
         reduced: bool,
     ) -> Self {
-        let range = distance.min(1024) as i32 * 16;
+        let range = distance.min(4096) as i32 * 16;
         let mut level = 0;
-        while (16 << level) < range {
+        while (16 << level) < range && level < MAX_LEVEL {
             level += 1;
         }
         let size = 16 << level;
