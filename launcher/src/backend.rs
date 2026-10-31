@@ -286,7 +286,7 @@ fn release_list() -> Result<serde_json::Value, String> {
     let url = format!("https://api.github.com/repos/{REPO}/releases?per_page=100");
     if let Ok(resp) = get(&url) {
         if let Ok(json) = resp.into_json::<serde_json::Value>() {
-            if json.as_array().map_or(false, |a| !a.is_empty()) {
+            if json.as_array().is_some_and(|a| !a.is_empty()) {
                 return Ok(json);
             }
         }
@@ -1320,7 +1320,7 @@ fn refill_own_store(tag: &str) {
     let own = data_dir().join("minecraft");
     let resources = resources_at(&versions_dir().join(tag));
     if !own.join("assets/indexes").is_dir()
-        || !(lacks_languages(&resources) || !sounds_in(&resources))
+        || (!lacks_languages(&resources) && sounds_in(&resources))
         || ASKED.swap(true, std::sync::atomic::Ordering::Relaxed)
     {
         return;
@@ -3261,7 +3261,7 @@ impl Settings {
         }
         let mut settings: Settings = serde_json::from_value(value).unwrap_or_default();
         let sunset = sunset_dir();
-        if settings.minecraft_dir.as_ref().map_or(true, |p| {
+        if settings.minecraft_dir.as_ref().is_none_or(|p| {
             let s = p.to_string_lossy();
             s.contains("PrismLauncher") || s.contains("multimc") || s.contains("ModrinthApp")
         }) {
@@ -3270,7 +3270,7 @@ impl Settings {
         if settings
             .selected
             .as_ref()
-            .map_or(true, |s| s.starts_with("nightly"))
+            .is_none_or(|s| s.starts_with("nightly"))
         {
             settings.selected = Some(SUNSET_VERSION.to_string());
         }

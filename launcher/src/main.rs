@@ -2,6 +2,7 @@
 //! and starts the client or a dedicated server.
 
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+#![allow(dead_code)]
 
 mod agents_page;
 mod art;
@@ -350,7 +351,7 @@ impl Launcher {
 
         let mut settings = Settings::load();
         i18n::set(settings.language());
-        if settings.minecraft_dir.as_ref().map_or(true, |p| {
+        if settings.minecraft_dir.as_ref().is_none_or(|p| {
             let s = p.to_string_lossy();
             s.contains("PrismLauncher") || s.contains("multimc") || s.contains("ModrinthApp")
         }) {
@@ -360,7 +361,7 @@ impl Launcher {
         if settings
             .selected
             .as_ref()
-            .map_or(true, |s| s.starts_with("nightly"))
+            .is_none_or(|s| s.starts_with("nightly"))
         {
             settings.selected = Some(backend::SUNSET_VERSION.to_string());
             settings.save();
