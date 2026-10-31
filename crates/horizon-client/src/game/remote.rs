@@ -287,6 +287,11 @@ pub(super) struct Remote {
     /// Paced to avoid bursting into server packet rate limiters (e.g. Paper).
     pending_batch_acks: u32,
     last_batch_ack_time: Option<Instant>,
+    /// Pending pong packet IDs waiting to be sent to the server.
+    /// Paced to avoid tripping server packet rate limiters (e.g. ViaVersion or Paper PPS limit)
+    /// during rapid transaction bursts on join/dimension changes.
+    pending_pongs: VecDeque<i32>,
+    last_pong_time: Option<Instant>,
 }
 
 /// ChunkBatchSizeCalculator: the chunks per tick a vanilla client asks for,
@@ -652,6 +657,8 @@ impl Game<'_> {
             batch_calculator: ChunkBatchSizeCalculator::new(),
             pending_batch_acks: 0,
             last_batch_ack_time: None,
+            pending_pongs: VecDeque::new(),
+            last_pong_time: None,
             transfer: None,
         });
         // The level's TickRateManager follows the server's ticking packets.
@@ -806,6 +813,8 @@ impl Game<'_> {
             r.batch_calculator = ChunkBatchSizeCalculator::new();
             r.pending_batch_acks = 0;
             r.last_batch_ack_time = None;
+            r.pending_pongs.clear();
+            r.last_pong_time = None;
             r.status = horizon_client::lang::get_or(
                 "multiplayer.downloadingTerrain",
                 "Loading terrain...",
@@ -1329,7 +1338,47 @@ impl Game<'_> {
         }
         self.send_suggestion_request();
         self.send_chunk_batch_ack_if_due();
+        self.send_pongs_if_due();
         Ok(())
+    }
+
+    /// Sends pending pong packets at a controlled rate to prevent tripping
+    /// server packet limiters (such as ViaVersion or Paper PPS rate limits)
+    /// when servers burst hundreds or thousands of transaction pings on join/transfer.
+    fn send_pongs_if_due(&mut self) {
+        let to_send = {
+            let Some(r) = self.remote.as_mut() else {
+                return;
+            };
+            if r.pending_pongs.is_empty() {
+                return;
+            }
+            let now = Instant::now();
+            let min_interval = Duration::from_millis(5);
+            let budget = match r.last_pong_time {
+                None => 1,
+                Some(last) => {
+                    let elapsed = now.duration_since(last);
+                    if elapsed < min_interval {
+                        return;
+                    }
+                    ((elapsed.as_millis() / min_interval.as_millis()) as usize).clamp(1, 4)
+                }
+            };
+            let mut to_send = Vec::new();
+            for _ in 0..budget {
+                if let Some(id) = r.pending_pongs.pop_front() {
+                    to_send.push(id);
+                } else {
+                    break;
+                }
+            }
+            r.last_pong_time = Some(now);
+            to_send
+        };
+        for id in to_send {
+            self.send(S::Pong(horizon_protocol::packets::configuration::Ping { id }));
+        }
     }
 
     /// Acknowledges received chunk batches to the server (`ServerboundChunkBatchReceivedPacket`).
@@ -2261,7 +2310,12 @@ impl Game<'_> {
         match packet {
             // ClientCommonPacketListenerImpl.handlePing runs on the game
             // thread, after all preceding packets (especially teleports).
-            C::Ping(p) => self.send(S::Pong(p)),
+            C::Ping(p) => {
+                if let Some(r) = self.remote.as_mut() {
+                    r.pending_pongs.push_back(p.id);
+                }
+                self.send_pongs_if_due();
+            }
             // PingDebugMonitor.onPongReceived.
             C::PongResponse(p) => {
                 let delay = self.debug_millis() - p.time;
@@ -4413,6 +4467,7 @@ impl Game<'_> {
             self.send(S::ClientTickEnd(Empty));
         }
         self.send_chunk_batch_ack_if_due();
+        self.send_pongs_if_due();
         Ok(())
     }
 
