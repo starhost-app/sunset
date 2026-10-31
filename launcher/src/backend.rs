@@ -143,12 +143,6 @@ pub(crate) fn get(url: &str) -> Result<ureq::Response, String> {
     })
 }
 
-/// A Horizon game tag: `v` then a digit (`v2026.10.13`). Launcher tags never match.
-pub fn is_game_tag(tag: &str) -> bool {
-    tag.strip_prefix('v')
-        .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
-}
-
 /// The launcher version in a `launcher@X.Y.Z`, `launcher-vX.Y.Z`, `vX.Y.Z`, or `sunset-vX.Y.Z` tag.
 pub fn launcher_version(tag: &str) -> Option<&str> {
     tag.strip_prefix(LAUNCHER_TAG_PREFIX)
@@ -157,9 +151,22 @@ pub fn launcher_version(tag: &str) -> Option<&str> {
         .or_else(|| tag.strip_prefix("sunset@"))
         .or_else(|| {
             tag.strip_prefix('v')
-                .filter(|v| !v.starts_with("202"))
+                .filter(|v| v.starts_with("1."))
         })
         .filter(|v| v.starts_with(|c: char| c.is_ascii_digit()))
+}
+
+pub fn is_launcher_tag(tag: &str) -> bool {
+    launcher_version(tag).is_some()
+}
+
+/// A Horizon game tag: `v` then a digit (`v2026.10.13`). Launcher tags never match.
+pub fn is_game_tag(tag: &str) -> bool {
+    if is_launcher_tag(tag) {
+        return false;
+    }
+    tag.strip_prefix('v')
+        .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
 }
 
 /// The tag this launcher was released as. launcher.yml gives it (`HORIZON_LAUNCHER_TAG`); a release
@@ -304,7 +311,15 @@ pub(crate) fn parse_releases(
             continue;
         }
         let found = r["assets"].as_array().into_iter().flatten().find_map(|a| {
-            (Some(a["name"].as_str()?) == asset).then(|| {
+            let name = a["name"].as_str()?;
+            let matches = Some(name) == asset
+                || (asset == Some("horizon-linux-x86_64.tar.gz") && name == "sunset-linux-x86_64.tar.gz")
+                || (asset == Some("horizon-windows-x64.zip") && name == "sunset-windows-x64.zip")
+                || (asset == Some("horizon-launcher-linux-x86_64.tar.gz")
+                    && (name == "sunset-launcher-linux-x86_64.tar.gz" || name == "sunset-launcher-linux-x86_64"))
+                || (asset == Some("horizon-launcher-windows-x64.zip")
+                    && (name == "sunset-launcher-windows-x64.zip" || name == "sunset-launcher-windows-x64.exe"));
+            matches.then(|| {
                 Some((
                     a["browser_download_url"].as_str()?.to_string(),
                     a["size"].as_u64()?,
@@ -330,10 +345,6 @@ pub(crate) fn parse_releases(
     out
 }
 
-fn is_launcher_tag(tag: &str) -> bool {
-    launcher_version(tag).is_some()
-}
-
 /// Published Horizon builds, newest first: the current Nightly (the only build Horizon ships since
 /// 2026-10-28, docs/release-flow.md), the last week's Nightlies, then the releases from before.
 /// Drafts never reach the anonymous API, and launcher releases are left out.
@@ -345,8 +356,9 @@ pub fn releases() -> Result<Vec<Release>, String> {
 /// ([`crate::nightly::version_of`]); only the current one (`nightly`) is an update.
 pub(crate) fn game_releases(list: &serde_json::Value) -> Vec<Release> {
     let mut out = parse_releases(list, ASSET, |tag| {
-        is_game_tag(tag) || horizon_release_sign::is_nightly(tag)
+        (is_game_tag(tag) || horizon_release_sign::is_nightly(tag)) && !is_launcher_tag(tag)
     });
+    out.retain(|r| !r.name.to_lowercase().contains("launcher"));
     for r in &mut out {
         if horizon_release_sign::is_nightly(&r.tag) {
             let version = crate::nightly::version_of(r);

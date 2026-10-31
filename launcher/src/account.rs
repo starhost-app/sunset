@@ -1029,6 +1029,12 @@ impl Accounts {
             }
         }
 
+        if loaded.selected.is_none() && loaded.offline_selected.is_none() {
+            if let Some(first) = loaded.accounts.first() {
+                loaded.selected = Some(first.uuid.clone());
+            }
+        }
+
         loaded
     }
     pub fn save(&self) -> Result<(), String> {

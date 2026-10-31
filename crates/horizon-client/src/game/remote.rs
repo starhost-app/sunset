@@ -5532,6 +5532,10 @@ impl Game<'_> {
                 self.with_hand(hand, Game::swing_arm);
                 return true;
             }
+            if player {
+                self.with_hand(hand, Game::swing_arm);
+                return true;
+            }
         }
         false
     }

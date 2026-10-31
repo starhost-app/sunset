@@ -54,11 +54,13 @@ impl Launcher {
                 .iter()
                 .map(|n| (Player::Offline(n.clone()), n.clone(), tr("Offline"))),
         );
-        out.push((
-            Player::GameName,
-            self.offline_name.clone().unwrap_or_else(|| "Player".into()),
-            tr("Offline, the game's name"),
-        ));
+        if out.is_empty() {
+            out.push((
+                Player::GameName,
+                self.offline_name.clone().unwrap_or_else(|| "Player".into()),
+                tr("Offline, the game's name"),
+            ));
+        }
         out
     }
 
