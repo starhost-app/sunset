@@ -52,6 +52,8 @@ pub enum Event {
     Packet(Box<play::Clientbound>),
     /// A packet that failed to decode (skipped, like vanilla's skippable packets).
     DecodeError(String),
+    /// The server sent StartConfiguration (switching servers behind a proxy).
+    StartConfiguration,
     /// The server sent us back to configuration and finished it again.
     Reconfigured(Arc<Dynamic>),
     /// ClientboundResourcePackPushPacket, in configuration or in play.
@@ -647,6 +649,7 @@ fn receive_play(
                 let _ = send.send(Event::PackPop(p.id));
             }
             play::Clientbound::StartConfiguration(_) => {
+                let _ = send.send(Event::StartConfiguration);
                 if let Some(w) = shared_writer.lock().unwrap().as_mut() {
                     let _ = w.send(&play::Serverbound::ConfigurationAcknowledged(Empty).encode());
                     configuring.store(true, Ordering::Relaxed);

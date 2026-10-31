@@ -16,7 +16,7 @@ fn scratch(name: &str) -> PathBuf {
 
 /// The game started in `cwd` with `args`, its homes kept inside `cwd`.
 fn run(cwd: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_horizon-client"))
+    Command::new(env!("CARGO_BIN_EXE_sunset-client"))
         .args(args)
         .current_dir(cwd)
         .env("HORIZON_HOME", cwd.join("env home"))

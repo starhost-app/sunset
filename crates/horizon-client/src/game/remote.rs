@@ -700,6 +700,54 @@ impl Game<'_> {
         self.titles.reset_times();
     }
 
+    /// `handleConfigurationStart` -> `clearClientLevel`. Clears all level,
+    /// player, entity, and input state when the connection enters configuration
+    /// (e.g. proxy server transfers).
+    fn clear_for_reconfiguration(&mut self) {
+        self.hud_disconnected();
+        self.score.board = Default::default();
+        self.player = None;
+        self.keys.clear();
+        self.toggles.respawn();
+        self.left = false;
+        self.right = false;
+        self.mining = None;
+        self.inventory = vec![None; 36];
+        self.carried = None;
+        self.offhand = None;
+        self.armor = Default::default();
+        self.mobs.clear();
+        self.clear_remote_objects();
+        self.clear_remote_projectiles();
+        self.dropped.clear();
+        self.particles.clear();
+        self.pickups.clear();
+        if let Some(r) = self.remote.as_mut() {
+            r.players.clear();
+            r.tab_players.clear();
+            r.listed.clear();
+            r.level_players.clear();
+            r.level_player_names.clear();
+            r.level_player_textures.clear();
+            r.entities.clear();
+            r.lerps.clear();
+            r.signatures = Default::default();
+            r.custom_completions.clear();
+            r.logged_in = false;
+            r.loaded_sent = false;
+            r.input = Default::default();
+            r.position_sender = Default::default();
+            r.synced = vec![None; CREATIVE_SYNCED];
+            r.menu = None;
+            r.destroying = None;
+            r.status = horizon_client::lang::get_or(
+                "multiplayer.downloadingTerrain",
+                "Loading terrain...",
+            );
+        }
+        self.ui.registries.custom_completions.clear();
+    }
+
     pub(super) fn send(&self, packet: S) {
         if let Some(r) = &self.remote {
             r.session.send(packet);
@@ -1140,21 +1188,11 @@ impl Game<'_> {
                         remote.quiet_commands = true;
                     }
                 }
+                Event::StartConfiguration => {
+                    self.clear_for_reconfiguration();
+                }
                 Event::Reconfigured(registries) => {
-                    // handleConfigurationStart → clearClientLevel, and the next
-                    // ClientPacketListener starts with no players or scoreboard,
-                    // and its new ClientSuggestionProvider with no custom
-                    // chat completions.
-                    self.hud_disconnected();
-                    self.score.board = Default::default();
-                    if let Some(r) = self.remote.as_mut() {
-                        r.players.clear();
-                        r.tab_players.clear();
-                        r.listed.clear();
-                        r.signatures = Default::default();
-                        r.custom_completions.clear();
-                    }
-                    self.ui.registries.custom_completions.clear();
+                    self.clear_for_reconfiguration();
                     self.set_registries(registries);
                 }
                 // handleTransfer: "Cannot transfer to server from
@@ -1327,6 +1365,18 @@ impl Game<'_> {
         // A replacement LocalPlayer has a fresh sendPosition baseline.
         r.position_sender = Default::default();
         r.predictions.clear();
+        if !keep_world {
+            self.player = None;
+            self.left = false;
+            self.right = false;
+            self.inventory = vec![None; 36];
+            self.carried = None;
+            self.offhand = None;
+            self.armor = Default::default();
+            r.input = Default::default();
+            r.synced = vec![None; CREATIVE_SYNCED];
+            r.menu = None;
+        }
         self.set_mode_id(spawn.game_type);
         self.dim = Dim::from_id(&spawn.dimension);
         // ClientPacketListener.handleLogin / handleRespawn: the server's
@@ -2130,6 +2180,14 @@ impl Game<'_> {
                 // new LocalPlayer (slot 0, no effects).
                 self.selected = 0;
                 self.potions.effects.clear();
+                self.inventory = vec![None; 36];
+                self.carried = None;
+                self.offhand = None;
+                self.armor = Default::default();
+                self.keys.clear();
+                self.toggles.respawn();
+                self.left = false;
+                self.right = false;
                 if let Some(r) = self.remote.as_mut() {
                     r.carried = Some(0);
                     r.own_invisible = false;
@@ -2137,9 +2195,12 @@ impl Game<'_> {
                     r.entity_id = p.player_id;
                     // handleLogin: the new LocalPlayer is the camera.
                     r.camera = None;
+                    r.joined = true;
                     r.logged_in = true;
                     r.view_distance = p.chunk_radius;
                     r.show_death_screen = p.show_death_screen;
+                    r.input = Default::default();
+                    r.synced = vec![None; CREATIVE_SYNCED];
                 }
                 self.streaming.radius =
                     self.settings.render_distance.min(p.chunk_radius + 1).max(2);
@@ -4244,8 +4305,12 @@ impl Game<'_> {
         self.native_tick();
         self.tell_native_now();
         // Minecraft.tick sends this even when the player cannot tick yet,
-        // including while waiting for chunks. Keep it outside early returns.
-        if self.remote.as_ref().is_some_and(|r| r.joined) {
+        // including while waiting for chunks (once the level is joined and logged in).
+        if self
+            .remote
+            .as_ref()
+            .is_some_and(|r| r.joined && r.logged_in)
+        {
             self.send(S::ClientTickEnd(Empty));
         }
         Ok(())
@@ -5529,13 +5594,9 @@ impl Game<'_> {
                 .is_some_and(|r| r.level_players.contains_key(&id));
             if !player && self.remote_mob_takes(i, hand) {
                 self.remote_feed_particles(i, hand);
-                self.with_hand(hand, Game::swing_arm);
-                return true;
             }
-            if player {
-                self.with_hand(hand, Game::swing_arm);
-                return true;
-            }
+            self.with_hand(hand, Game::swing_arm);
+            return true;
         }
         false
     }
