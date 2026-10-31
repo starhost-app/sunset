@@ -149,10 +149,16 @@ pub fn is_game_tag(tag: &str) -> bool {
         .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
 }
 
-/// The launcher version in a `launcher@X.Y.Z` (or `launcher-vX.Y.Z`) tag, or None for any other tag.
+/// The launcher version in a `launcher@X.Y.Z`, `launcher-vX.Y.Z`, `vX.Y.Z`, or `sunset-vX.Y.Z` tag.
 pub fn launcher_version(tag: &str) -> Option<&str> {
     tag.strip_prefix(LAUNCHER_TAG_PREFIX)
         .or_else(|| tag.strip_prefix(OLD_LAUNCHER_TAG_PREFIX))
+        .or_else(|| tag.strip_prefix("sunset-v"))
+        .or_else(|| tag.strip_prefix("sunset@"))
+        .or_else(|| {
+            tag.strip_prefix('v')
+                .filter(|v| !v.starts_with("202"))
+        })
         .filter(|v| v.starts_with(|c: char| c.is_ascii_digit()))
 }
 
