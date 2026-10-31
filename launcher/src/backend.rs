@@ -1927,7 +1927,10 @@ pub fn sounds(tag: &str, minecraft: &Path, log: &dyn Fn(String)) {
         !own && crate::process::command(binary)
             .arg("--help")
             .output()
-            .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("horizon-prepare sounds"))
+            .is_ok_and(|o| {
+                let text = String::from_utf8_lossy(&o.stdout);
+                text.contains("sunset-prepare sounds") || text.contains("horizon-prepare sounds")
+            })
     });
     set_prepare_step(PrepareStep::Sounds);
     log("Copying the sounds from your Minecraft install".into());

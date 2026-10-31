@@ -111,7 +111,7 @@ jobs:
 
       - name: Build Game Client & Tools
         run: |
-          cargo build --release --locked -p sunset-client --bin sunset-client -p sunset-prepare --bin sunset-prepare
+          cargo build --release --locked -p sunset-client --bin sunset-client --bin horizon-ctl -p sunset-prepare --bin sunset-prepare
 
       - name: Package artifacts
         shell: bash
@@ -121,11 +121,14 @@ jobs:
           cp launcher/target/release/${{ matrix.binary }} out/${{ matrix.standalone }}
 
           # 2. Game client package
-          mkdir -p game_dist/${{ matrix.dir_name }}
-          cp target/release/${{ matrix.game_bin }} game_dist/${{ matrix.dir_name }}/
-          cp target/release/${{ matrix.prepare_bin }} game_dist/${{ matrix.dir_name }}/
-          cp research-lock.json game_dist/${{ matrix.dir_name }}/
-          cp packaging/PLAY.txt game_dist/${{ matrix.dir_name }}/
+          mkdir -p "game_dist/${{ matrix.dir_name }}"
+          git archive -o "game_dist/archived.tar" HEAD tools mods/horizon/src/test/java crates/horizon-prepare research-lock.json LICENSE packaging/PLAY.txt
+          tar -xf "game_dist/archived.tar" -C "game_dist/${{ matrix.dir_name }}"
+          rm -f "game_dist/archived.tar"
+          cp target/release/${{ matrix.game_bin }} "game_dist/${{ matrix.dir_name }}/"
+          cp target/release/${{ matrix.prepare_bin }} "game_dist/${{ matrix.dir_name }}/"
+          cp target/release/horizon-ctl* "game_dist/${{ matrix.dir_name }}/" || true
+          cp packaging/PLAY.txt "game_dist/${{ matrix.dir_name }}/PLAY.txt"
 
           if [ "${{ runner.os }}" = "Windows" ]; then
             cd game_dist && 7z a -tzip ../out/${{ matrix.game_asset }} ${{ matrix.dir_name }}
