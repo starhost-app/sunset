@@ -1377,7 +1377,9 @@ impl Game<'_> {
             to_send
         };
         for id in to_send {
-            self.send(S::Pong(horizon_protocol::packets::configuration::Ping { id }));
+            self.send(S::Pong(horizon_protocol::packets::configuration::Ping {
+                id,
+            }));
         }
     }
 
