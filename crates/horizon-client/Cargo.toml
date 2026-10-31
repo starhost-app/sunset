@@ -1,11 +1,15 @@
 [package]
-name = "horizon-client"
+name = "sunset-client"
 default-run = "sunset-client"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 rust-version = "1.90"
 description = "SunSet native client"
+
+[lib]
+name = "horizon_client"
+path = "src/lib.rs"
 
 [[bin]]
 name = "sunset-client"

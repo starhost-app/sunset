@@ -60,10 +60,10 @@ SunSet cleans this up and focuses on stability, real-world usability, privacy, a
 
 ```sh
 # Build optimized client
-cargo build --profile fast -p horizon-client --bin sunset-client
+cargo build --profile fast -p sunset-client
 
 # Run client directly
-cargo run --profile fast -p horizon-client --bin sunset-client -- --world <WorldName>
+cargo run --profile fast -p sunset-client -- --world <WorldName>
 ```
 
 ### Build the Launcher
