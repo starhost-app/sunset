@@ -1,6 +1,6 @@
 [package]
 name = "sunset-launcher"
-version = "1.0.9"
+version = "1.0.10"
 edition = "2021"
 license = "MIT"
 description = "Downloads, prepares and starts SunSet builds"
@@ -37,7 +37,7 @@ self-replace = "1"
 clap = { version = "4", features = ["derive"] }
 horizon-theme = { path = "../crates/horizon-theme" }
 horizon-core = { path = "../crates/horizon-core" }
-horizon-prepare = { path = "../crates/horizon-prepare" }
+horizon-prepare = { package = "sunset-prepare", path = "../crates/horizon-prepare" }
 # Join a friend: invite codes (the game does the joining).
 horizon-friends = { path = "../crates/horizon-friends" }
 horizon-bench = { path = "../crates/horizon-bench" }

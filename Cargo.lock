@@ -1262,18 +1262,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "horizon-prepare"
-version = "0.1.0"
-dependencies = [
- "crc32fast",
- "libc",
- "regex",
- "sha1",
- "sha2",
- "zip",
-]
-
-[[package]]
 name = "horizon-protocol"
 version = "0.1.0"
 dependencies = [
@@ -3171,6 +3159,18 @@ dependencies = [
  "wgpu",
  "winit",
  "winresource",
+ "zip",
+]
+
+[[package]]
+name = "sunset-prepare"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "libc",
+ "regex",
+ "sha1",
+ "sha2",
  "zip",
 ]
 

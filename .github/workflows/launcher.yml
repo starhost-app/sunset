@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (leave blank to use version from Cargo.toml, e.g. v1.0.8)'
+        description: 'Release tag (leave blank to use version from Cargo.toml, e.g. v1.0.10)'
         required: false
         type: string
       prerelease:
@@ -75,47 +75,70 @@ jobs:
             os: ubuntu-22.04
             binary: sunset-launcher
             standalone: sunset-launcher-linux-x86_64
+            game_bin: sunset-client
+            prepare_bin: sunset-prepare
+            dir_name: sunset-linux-x86_64
+            game_asset: sunset-linux-x86_64.tar.gz
           - name: windows-x64
             os: windows-latest
             binary: sunset-launcher.exe
             standalone: sunset-launcher-windows-x64.exe
+            game_bin: sunset-client.exe
+            prepare_bin: sunset-prepare.exe
+            dir_name: sunset-windows-x64
+            game_asset: sunset-windows-x64.zip
             rustflags: -C target-feature=+crt-static
-    defaults:
-      run:
-        working-directory: launcher
-        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: launcher
-          shared-key: launcher-${{ matrix.name }}
+          shared-key: release-${{ matrix.name }}
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-x11-dev libwayland-dev libx11-xcb-dev libfontconfig-dev libvulkan-dev libasound2-dev
+          sudo apt-get install -y libxkbcommon-x11-dev libwayland-dev libx11-xcb-dev libfontconfig-dev libvulkan-dev libasound2-dev libudev-dev
 
-      - name: Build release binaries
+      - name: Build Launcher
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
           HORIZON_LAUNCHER_VERSION: ${{ needs.version.outputs.version }}
           HORIZON_LAUNCHER_TAG: ${{ needs.version.outputs.tag }}
         run: |
-          cargo build --release --locked
+          cargo build --release --locked --manifest-path launcher/Cargo.toml
+
+      - name: Build Game Client & Tools
+        run: |
+          cargo build --release --locked -p sunset-client --bin sunset-client -p sunset-prepare --bin sunset-prepare
 
       - name: Package artifacts
+        shell: bash
         run: |
           mkdir -p out
-          cp target/release/${{ matrix.binary }} out/${{ matrix.standalone }}
+          # 1. Standalone launcher
+          cp launcher/target/release/${{ matrix.binary }} out/${{ matrix.standalone }}
+
+          # 2. Game client package
+          mkdir -p game_dist/${{ matrix.dir_name }}
+          cp target/release/${{ matrix.game_bin }} game_dist/${{ matrix.dir_name }}/
+          cp target/release/${{ matrix.prepare_bin }} game_dist/${{ matrix.dir_name }}/
+          cp research-lock.json game_dist/${{ matrix.dir_name }}/
+          cp packaging/PLAY.txt game_dist/${{ matrix.dir_name }}/
+
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cd game_dist && 7z a -tzip ../out/${{ matrix.game_asset }} ${{ matrix.dir_name }}
+          else
+            cd game_dist && tar -czf ../out/${{ matrix.game_asset }} ${{ matrix.dir_name }}
+          fi
+          cd ..
           ls -la out/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: launcher-${{ matrix.name }}
-          path: launcher/out/*
+          name: release-${{ matrix.name }}
+          path: out/*
           retention-days: 1
 
   release:
@@ -125,9 +148,12 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v4
         with:
-          pattern: launcher-*
+          pattern: release-*
           path: dist
           merge-multiple: true
 
@@ -141,7 +167,7 @@ jobs:
           cat SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Publish GitHub Release
+      - name: Generate Notes and Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
@@ -150,8 +176,22 @@ jobs:
           DRAFT: ${{ github.event.inputs.draft || 'false' }}
         shell: bash
         run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 --match="v1*" HEAD^ 2>/dev/null || git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            NOTES=$(git log "${PREV_TAG}..HEAD" --format="- %s")
+          else
+            NOTES=$(git log -n 1 --format="- %s")
+          fi
+          if [ -z "$NOTES" ]; then
+            NOTES=$(git log -n 1 --format="- %s")
+          fi
+          echo "$NOTES" > notes.md
+          echo "### Generated Patch Notes:"
+          cat notes.md
+
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists, updating assets..."
+            echo "Release $TAG already exists, updating assets and notes..."
+            gh release edit "$TAG" --notes-file notes.md
             gh release upload "$TAG" dist/* --clobber
           else
             echo "Creating new release $TAG..."
@@ -163,24 +203,8 @@ jobs:
               FLAGS+=(--draft)
             fi
 
-            python3 -c "
-            import os
-            version = os.environ['VERSION']
-            tag = os.environ['TAG']
-            repo = os.environ['GITHUB_REPOSITORY']
-            notes = f'''## SunSet Launcher v{version}
-
-            ### Downloads
-            - **Windows (x64)**: [sunset-launcher-windows-x64.exe](https://github.com/{repo}/releases/download/{tag}/sunset-launcher-windows-x64.exe)
-            - **Linux (x86_64)**: [sunset-launcher-linux-x86_64](https://github.com/{repo}/releases/download/{tag}/sunset-launcher-linux-x86_64)
-
-            *Checksums are verified in SHA256SUMS.*'''
-            with open('notes.md', 'w') as f:
-                f.write(notes)
-            "
-
             gh release create "$TAG" dist/* \
-              --title "SunSet Launcher v${VERSION}" \
+              --title "SunSet v${VERSION}" \
               --notes-file notes.md \
               "${FLAGS[@]}"
           fi

@@ -157,13 +157,13 @@ pub fn is_launcher_tag(tag: &str) -> bool {
     launcher_version(tag).is_some()
 }
 
-/// A Horizon game tag: `v` then a digit (`v2026.10.13`). Launcher tags never match.
+/// A Horizon/SunSet game tag: `v` then a digit (`v1.0.10`, `v2026.10.13`).
 pub fn is_game_tag(tag: &str) -> bool {
-    if is_launcher_tag(tag) {
-        return false;
-    }
-    tag.strip_prefix('v')
-        .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
+    tag.strip_prefix(LAUNCHER_TAG_PREFIX).is_none()
+        && tag.strip_prefix(OLD_LAUNCHER_TAG_PREFIX).is_none()
+        && tag
+            .strip_prefix('v')
+            .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
 }
 
 /// The tag this launcher was released as. launcher.yml gives it (`HORIZON_LAUNCHER_TAG`); a release
@@ -364,9 +364,8 @@ pub fn releases() -> Result<Vec<Release>, String> {
 /// ([`crate::nightly::version_of`]); only the current one (`nightly`) is an update.
 pub(crate) fn game_releases(list: &serde_json::Value) -> Vec<Release> {
     let mut out = parse_releases(list, ASSET, |tag| {
-        (is_game_tag(tag) || horizon_release_sign::is_nightly(tag)) && !is_launcher_tag(tag)
+        is_game_tag(tag) || horizon_release_sign::is_nightly(tag)
     });
-    out.retain(|r| !r.name.to_lowercase().contains("launcher"));
     for r in &mut out {
         if horizon_release_sign::is_nightly(&r.tag) {
             let version = crate::nightly::version_of(r);
@@ -1433,14 +1432,22 @@ pub enum Preparer {
     Process(Command),
 }
 
-/// The version's horizon-prepare binary, when it ships one.
+/// The version's preparer binary (sunset-prepare or horizon-prepare), when it ships one.
 fn preparer_binary(dir: &Path) -> Option<PathBuf> {
-    let binary = dir.join(if cfg!(windows) {
+    let sunset = dir.join(if cfg!(windows) {
+        "sunset-prepare.exe"
+    } else {
+        "sunset-prepare"
+    });
+    if sunset.is_file() {
+        return Some(sunset);
+    }
+    let horizon = dir.join(if cfg!(windows) {
         "horizon-prepare.exe"
     } else {
         "horizon-prepare"
     });
-    binary.is_file().then_some(binary)
+    horizon.is_file().then_some(horizon)
 }
 
 /// Downloads the pinned version from Mojang into `dir` when an account in the launcher owns
