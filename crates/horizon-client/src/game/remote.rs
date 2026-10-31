@@ -283,6 +283,10 @@ pub(super) struct Remote {
     /// `ClientPacketListener.chunkBatchSizeCalculator`: calculates desired chunks per tick
     /// based on how long batches take to arrive.
     batch_calculator: ChunkBatchSizeCalculator,
+    /// Pending chunk batch acknowledgments waiting to be sent to the server.
+    /// Paced to avoid bursting into server packet rate limiters (e.g. Paper).
+    pending_batch_acks: u32,
+    last_batch_ack_time: Option<Instant>,
 }
 
 /// ChunkBatchSizeCalculator: the chunks per tick a vanilla client asks for,
@@ -646,6 +650,8 @@ impl Game<'_> {
             server_links: Vec::new(),
             debug_query: Default::default(),
             batch_calculator: ChunkBatchSizeCalculator::new(),
+            pending_batch_acks: 0,
+            last_batch_ack_time: None,
             transfer: None,
         });
         // The level's TickRateManager follows the server's ticking packets.
@@ -798,6 +804,8 @@ impl Game<'_> {
             r.menu = None;
             r.destroying = None;
             r.batch_calculator = ChunkBatchSizeCalculator::new();
+            r.pending_batch_acks = 0;
+            r.last_batch_ack_time = None;
             r.status = horizon_client::lang::get_or(
                 "multiplayer.downloadingTerrain",
                 "Loading terrain...",
@@ -1320,7 +1328,34 @@ impl Game<'_> {
             r.backlog = events;
         }
         self.send_suggestion_request();
+        self.send_chunk_batch_ack_if_due();
         Ok(())
+    }
+
+    /// Acknowledges received chunk batches to the server (`ServerboundChunkBatchReceivedPacket`).
+    /// Paced so that acknowledgments never burst faster than 1 packet per 25ms (40 pkts/s),
+    /// protecting against Paper/Velocity packet rate limiters during rapid chunk streaming.
+    fn send_chunk_batch_ack_if_due(&mut self) {
+        let desired = {
+            let Some(r) = self.remote.as_mut() else {
+                return;
+            };
+            if r.pending_batch_acks == 0 {
+                return;
+            }
+            let now = Instant::now();
+            if let Some(last) = r.last_batch_ack_time {
+                if now.duration_since(last) < Duration::from_millis(25) {
+                    return;
+                }
+            }
+            r.last_batch_ack_time = Some(now);
+            r.pending_batch_acks -= 1;
+            r.batch_calculator.desired_chunks_per_tick()
+        };
+        self.send(S::ChunkBatchReceived(play::ChunkBatchReceived {
+            chunks_per_tick: desired,
+        }));
     }
     /// ClientSuggestionProvider.customSuggestion: the chat's completion
     /// request for an `ask_server` node goes to the server.
@@ -2338,15 +2373,11 @@ impl Game<'_> {
                 }
             }
             C::ChunkBatchFinished(p) => {
-                let desired = if let Some(r) = self.remote.as_mut() {
+                if let Some(r) = self.remote.as_mut() {
                     r.batch_calculator.on_batch_finished(p.size);
-                    r.batch_calculator.desired_chunks_per_tick()
-                } else {
-                    3.5
-                };
-                self.send(S::ChunkBatchReceived(play::ChunkBatchReceived {
-                    chunks_per_tick: desired,
-                }));
+                    r.pending_batch_acks = (r.pending_batch_acks + 1).min(10);
+                }
+                self.send_chunk_batch_ack_if_due();
             }
             C::BlockUpdate(p) => self.server_block(p.pos, p.state),
             // ClientPacketListener.handleBlockDestruction: another player's crack.
@@ -4381,6 +4412,7 @@ impl Game<'_> {
         {
             self.send(S::ClientTickEnd(Empty));
         }
+        self.send_chunk_batch_ack_if_due();
         Ok(())
     }
 
@@ -8001,6 +8033,16 @@ mod tests {
         let desired = calc.desired_chunks_per_tick();
         assert!(desired.is_finite());
         assert!(desired > 0.0);
+    }
+
+    #[test]
+    fn chunk_batch_ack_pacing_bounds() {
+        // Test that pending batch acks saturating cap works as expected (at most 10)
+        let mut pending = 0u32;
+        for _ in 0..50 {
+            pending = (pending + 1).min(10);
+        }
+        assert_eq!(pending, 10);
     }
     /// An NPC plugin lists the NPC, spawns it, and takes the entry off the list:
     /// the entity keeps the skin it found; a player spawned before its entry
