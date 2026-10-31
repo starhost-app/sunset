@@ -22,11 +22,29 @@ SunSet cleans this up and focuses on stability, real-world usability, privacy, a
 - **No Ads or Forced Servers**  
   Excised the Sculk partner advertisements, promotional banners, and hardcoded pre-added servers (`horizon.bunchy7s.dev`) from the server list. Your multiplayer list only contains the servers you choose to add.
 
+- **Fixed `You are sending too many packets!` Kicks on Server Transfer & Join**  
+  Modern Paper servers and anticheats (e.g. GrimAC, ViaVersion) send large batches of `ClientboundPingPacket` transactions (often 1,200+ pings at once during world and player initialization). Upstream immediately echoed every `ServerboundPongPacket` in the same frame, causing a 60,000+ packets/sec burst that instantly tripped proxy and server packet rate limiters (`max-pps: 300`). SunSet queues and paces `Pong` responses at a controlled rate ($\le 200$ pkts/s), eliminating packet-rate disconnects while easily satisfying anticheat latency checks.
+
+- **Chunk Batch Acknowledgment Pacing & Vanilla HotSpot-Exact Calculator**  
+  Chunk batch acknowledgments (`ChunkBatchReceived`) were previously unthrottled during fast chunk streaming, bursting hundreds of acks into Paper and Velocity rate limiters. SunSet implemented the vanilla `ChunkBatchSizeCalculator` algorithm and paces chunk batch acknowledgments to a safe rate.
+
+- **Proxy Server Switching & Configuration Phase State Desync Fix**  
+  When proxies (Velocity, BungeeCord) transfer a player to another backend server, the connection re-enters the `Configuration` phase. Fixed state desyncs, cleared lingering entities, reset creative inventory sync state, and prevented play packets from leaking into the configuration phase, eliminating disconnection errors on network server switches.
+
+- **Launcher Account Switcher & UI Improvements**  
+  Fixed phantom/empty account entries in the dropdown, restored the clean classic dark theme with pill buttons and gutters, moved the account selector directly to the Play bar, and implemented clean version formatting (`v1.0.8`, `nightly-...`).
+
+- **LOD View Distance Stability**  
+  Fixed buffer allocations and rendering panics at extreme render distances, supporting LOD render distances up to 2048 chunks stably.
+
+- **Automatic Asset Preparation on Install**  
+  The launcher automatically prepares vanilla assets upon version installation without requiring manual preparation commands.
+
 - **Renamed Client Executable**  
   The native game binary is cleanly named `sunset-client`.
 
-- **Independent Version Updates**  
-  Version discovery and launcher releases pull directly from the [SunSet repository](https://github.com/starhost-app/sunset) via standard public requests.
+- **Independent Version Updates & CI/CD**  
+  Version discovery and launcher releases pull directly from the [SunSet repository](https://github.com/starhost-app/sunset) via standard public requests, complete with automated GitHub Actions release builds for Linux and Windows.
 
 ---
 
